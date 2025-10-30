@@ -152,7 +152,6 @@ class Activity(BaseModel):
         }
 
     def deploy(self, token: str) -> None:
-        self.set_revit_command_line()
         create_activity(token=token, payload=self.to_api_dict())
         create_activity_alias(activity_id=self.id, alias_id=self.alias, version=1, token=token)
 

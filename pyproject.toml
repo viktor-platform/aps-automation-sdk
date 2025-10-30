@@ -1,7 +1,7 @@
 [project]
 name = "aps-automation-sdk"
 version = "0.1.0"
-description = "Python SDK for Autodesk Platform Services Design Automation API"
+description = "Python SDK for Autodesk Platform Services Automation API"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
