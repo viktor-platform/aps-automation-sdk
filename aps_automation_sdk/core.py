@@ -191,6 +191,27 @@ def run_work_item(token: str, full_activity_alias: str, work_item_args: dict[str
     r.raise_for_status()
     return r.json()
 
+def run_public_work_item(token: str, full_activity_alias: str, work_item_args: dict[str,Any], signature: str):
+    url = f"{DA_BASE_URL}/workitems"
+    payload = {
+        "activityId": full_activity_alias,
+        "arguments": work_item_args,
+        "signatures": {
+            "activityId": signature,
+            "workItem": signature
+        }
+    }
+    import pprint
+    pprint.pp(f"{payload=}")
+    r = requests.post(url, headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json","x-ads-workitem-signature": signature}, json=payload, timeout=30)
+    
+    if r.status_code != 200:
+        print(f" Error found: {r.text=}")
+    
+    r.raise_for_status()
+    return r.json()
+
+
 
 def get_workitem_status(workitem_id: str, token: str) -> dict[str, Any]:
     """
