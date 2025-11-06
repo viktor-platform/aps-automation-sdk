@@ -180,6 +180,8 @@ From the project root directory:
 
 ```powershell
 # Install the package in editable mode
+uv venv
+source .venv/bin/activate   # on Windows: .venv\Scripts\activate
 uv pip install -e .
 ```
 
