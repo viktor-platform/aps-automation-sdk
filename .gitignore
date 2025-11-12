@@ -12,3 +12,4 @@ wheels/
 
 # Library files
 output/
+.mypy_cache/
