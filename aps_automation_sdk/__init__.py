@@ -25,6 +25,18 @@ from .utils import (
     publish_appbundle_update
 )
 
+from .model_derivative import (
+    safe_base64_encode,
+    to_md_urn,
+    get_revit_version_from_manifest,
+    fetch_manifest,
+    get_revit_version_from_oss_object,
+    start_svf_translation_job,
+    get_translation_status,
+    translate_file_in_oss,
+    get_translation_info,
+)
+
 __all__ = [
     "Activity",
     "ActivityParameter",
@@ -45,7 +57,16 @@ __all__ = [
     "create_appbundle_version",
     "move_or_create_alias",
     "publish_appbundle_update",
-    "set_nickname"
+    "set_nickname",
+    "safe_base64_encode",
+    "to_md_urn",
+    "get_revit_version_from_manifest",
+    "fetch_manifest",
+    "get_revit_version_from_oss_object",
+    "start_svf_translation_job",
+    "get_translation_status",
+    "translate_file_in_oss",
+    "get_translation_info",
 ]
 
 __version__ = "0.1.0"
