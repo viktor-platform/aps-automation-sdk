@@ -22,22 +22,27 @@ wheels = [
 
 [[package]]
 name = "aps-automation-sdk"
-version = "0.1.0"
-source = { virtual = "." }
+version = "0.1.1rc1"
+source = { editable = "." }
 dependencies = [
-    { name = "ipykernel" },
     { name = "pydantic" },
     { name = "python-dotenv" },
     { name = "requests" },
 ]
 
+[package.optional-dependencies]
+examples = [
+    { name = "ipykernel" },
+]
+
 [package.metadata]
 requires-dist = [
-    { name = "ipykernel", specifier = ">=7.1.0" },
+    { name = "ipykernel", marker = "extra == 'examples'", specifier = ">=7.1.0" },
     { name = "pydantic", specifier = ">=2.12.3" },
     { name = "python-dotenv", specifier = ">=1.2.1" },
     { name = "requests", specifier = ">=2.32.5" },
 ]
+provides-extras = ["examples"]
 
 [[package]]
 name = "asttokens"
