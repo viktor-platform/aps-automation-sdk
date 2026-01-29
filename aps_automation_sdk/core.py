@@ -11,9 +11,17 @@ load_dotenv()
 APS_BASE_URL = "https://developer.api.autodesk.com"
 OSS_V2_BASE_URL = f"{APS_BASE_URL}/oss/v2"
 OSS_V4_BASE_URL = f"{APS_BASE_URL}/oss/v4"
-MD_BASE_URL = f"{APS_BASE_URL}/modelderivative/v2" 
-DA_BASE_URL = f"{APS_BASE_URL}/da/us-east/v3" 
+MD_BASE_URL = f"{APS_BASE_URL}/modelderivative/v2"
 AUTH_URL = f"{APS_BASE_URL}/authentication/v2/token"
+
+def get_da_base_url(region: str = "US") -> str:
+    """Get the Design Automation base URL for the specified region."""
+    if region.upper() in ["EMEA", "EU"]:
+        return f"{APS_BASE_URL}/da/eu-west/v3"
+    return f"{APS_BASE_URL}/da/us-east/v3"
+
+# Default to US for backwards compatibility
+DA_BASE_URL = get_da_base_url("US")
 
 def get_nickname(token: str) -> str:
     """
@@ -177,17 +185,18 @@ def create_activity(
     return r.json()
 
 
-def run_work_item(token: str, full_activity_alias: str, work_item_args: dict[str,Any]):
-    url = f"{DA_BASE_URL}/workitems"
+def run_work_item(token: str, full_activity_alias: str, work_item_args: dict[str,Any], region: str = "US"):
+    da_url = get_da_base_url(region)
+    url = f"{da_url}/workitems"
     payload = {
         "activityId": full_activity_alias,
-        "arguments": work_item_args 
+        "arguments": work_item_args
     }
     r = requests.post(url, headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"}, json=payload, timeout=30)
-    
+
     if r.status_code != 200:
         print(f" Error found: {r.text=}")
-    
+
     r.raise_for_status()
     return r.json()
 
@@ -213,11 +222,12 @@ def run_public_work_item(token: str, full_activity_alias: str, work_item_args: d
 
 
 
-def get_workitem_status(workitem_id: str, token: str) -> dict[str, Any]:
+def get_workitem_status(workitem_id: str, token: str, region: str = "US") -> dict[str, Any]:
     """
     Get the current status and report URL for a WorkItem.
     """
-    url = f"{DA_BASE_URL}/workitems/{workitem_id}"
+    da_url = get_da_base_url(region)
+    url = f"{da_url}/workitems/{workitem_id}"
     r = requests.get(
         url,
         headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
@@ -240,13 +250,28 @@ def poll_workitem_status(workitem_id: str, token: str, max_wait: int = 600, inte
         last_status = status_resp.get("status", "")
         report_url = status_resp.get('reportUrl')
         logging.info("[%3ds] status=%s report_url=%s", elapsed, last_status, report_url)
-        if last_status in {"success", "failedUpload", "cancelled"}:
+
+        # Check for all terminal states (success or any failure type)
+        if last_status in {"success", "failed", "failedInstructions", "failedUpload", "failedDownload", "cancelled"}:
             report = status_resp.get("reportUrl")
             if report:
                 logging.info("Report URL: %s", report)
             break
+
         time.sleep(interval)
         elapsed += interval
-    
+
     return status_resp
-    
+
+
+def fetch_report_content(report_url: str) -> str:
+    """
+    Fetch the report content from the report URL.
+    Returns the text content of the report, or an error message if it fails.
+    """
+    try:
+        r = requests.get(report_url, timeout=30)
+        r.raise_for_status()
+        return r.text
+    except Exception as e:
+        return f"Failed to fetch report: {str(e)}"

@@ -10,8 +10,12 @@ DATA_V2 = f"{APS_BASE_URL}/data/v2"
 DA_V3 = f"{APS_BASE_URL}/da/us-east/v3"
 
 
-def bearer(token: str) -> dict[str, str]:
-    return {"Authorization": f"Bearer {token}"}
+def bearer(token: str, region: str = "US") -> dict[str, str]:
+    """Create authorization headers with optional region."""
+    headers = {"Authorization": f"Bearer {token}"}
+    if region.upper() in ["EMEA", "EU"]:
+        headers["x-ads-region"] = "EMEA"
+    return headers
 
 
 def item_from_version(project_id: str, version_urn: str, token: str) -> str:
@@ -50,10 +54,10 @@ def resolve_parent_folder(project_id: str, any_urn: str, token: str) -> str:
 
 
 def get_item_tip_version(
-    project_id: str, item_lineage_urn: str, token: str
+    project_id: str, item_lineage_urn: str, token: str, region: str = "US"
 ) -> dict[str, Any]:
     url = f"{DATA_V1}/projects/{project_id}/items/{urllib.parse.quote(item_lineage_urn, safe=':')}/tip"
-    r = requests.get(url, headers=bearer(token), timeout=30)
+    r = requests.get(url, headers=bearer(token, region), timeout=30)
     r.raise_for_status()
     return r.json()
 
@@ -73,7 +77,7 @@ def find_tip_storage_id(tip_payload: dict[str, Any]) -> str:
     raise RuntimeError("No storage id found in tip payload")
 
 
-def create_storage(project_id: str, folder_urn: str, file_name: str, token: str) -> str:
+def create_storage(project_id: str, folder_urn: str, file_name: str, token: str, region: str = "US") -> str:
     """POST /data/v1/projects/{project_id}/storage, returns storage objectId"""
     url = f"{DATA_V1}/projects/{project_id}/storage"
     payload = {
@@ -88,10 +92,22 @@ def create_storage(project_id: str, folder_urn: str, file_name: str, token: str)
     }
     r = requests.post(
         url,
-        headers={**bearer(token), "Content-Type": "application/vnd.api+json"},
+        headers={**bearer(token, region), "Content-Type": "application/vnd.api+json"},
         json=payload,
         timeout=30,
     )
+
+    # Enhanced error handling for 403
+    if r.status_code == 403:
+        error_detail = r.text
+        raise RuntimeError(
+            f"403 Forbidden when creating storage. This typically means:\n"
+            f"1. Your Autodesk account needs Admin role in the ACC project (not just Member)\n"
+            f"2. The OAuth token needs to be refreshed after adding data:create scope\n"
+            f"3. The folder might have restricted permissions\n"
+            f"Full error: {error_detail}"
+        )
+
     r.raise_for_status()
     storage_id = r.json().get("data", {}).get("id")
     if not storage_id:
@@ -107,10 +123,10 @@ def to_data_url_json(obj: dict) -> str:
 
 
 def find_item_by_name(
-    project_id: str, folder_urn: str, file_name: str, token: str
+    project_id: str, folder_urn: str, file_name: str, token: str, region: str = "US"
 ) -> str | None:
     url = f"{DATA_V1}/projects/{project_id}/folders/{folder_urn}/contents"
-    r = requests.get(url, headers=bearer(token), timeout=30)
+    r = requests.get(url, headers=bearer(token, region), timeout=30)
     r.raise_for_status()
     for entry in r.json().get("data", []):
         if (
@@ -122,7 +138,7 @@ def find_item_by_name(
 
 
 def create_version_for_item(
-    project_id: str, item_id: str, file_name: str, storage_id: str, token: str
+    project_id: str, item_id: str, file_name: str, storage_id: str, token: str, region: str = "US"
 ) -> dict[str, Any]:
     url = f"{DATA_V1}/projects/{project_id}/versions"
     payload = {
@@ -144,7 +160,7 @@ def create_version_for_item(
     }
     r = requests.post(
         url,
-        headers={**bearer(token), "Content-Type": "application/vnd.api+json"},
+        headers={**bearer(token, region), "Content-Type": "application/vnd.api+json"},
         json=payload,
         timeout=60,
     )
@@ -158,6 +174,7 @@ def create_item_with_first_version(
     file_name: str,
     storage_id: str,
     token: str,
+    region: str = "US",
     version: int = 1,
 ) -> dict[str, Any]:
     """
@@ -197,7 +214,7 @@ def create_item_with_first_version(
     }
     r = requests.post(
         url,
-        headers={**bearer(token), "Content-Type": "application/vnd.api+json"},
+        headers={**bearer(token, region), "Content-Type": "application/vnd.api+json"},
         json=payload,
         timeout=60,
     )

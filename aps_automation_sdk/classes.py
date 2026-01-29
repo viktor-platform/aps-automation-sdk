@@ -1,4 +1,5 @@
 import json
+import time
 from typing import Literal, Any, Optional
 from pydantic import BaseModel, Field, PrivateAttr
 from .core import (
@@ -15,7 +16,9 @@ from .core import (
     register_appbundle,
     run_work_item,
     poll_workitem_status,
-    run_public_work_item
+    run_public_work_item,
+    get_workitem_status,
+    fetch_report_content
 )
 from .utils import create_bucket
 from .dsl import RegisterBundleResponse, UploadParameters
@@ -253,12 +256,14 @@ class WorkItem(BaseModel):
 class ActivityInputParameterAcc(ActivityInputParameter):
     linage_urn: str | None = None
     project_id: str | None = None
-        
+    region: str = "US"  # Default to US region
+
     def get_acc_storage_url(self, token: str) -> str:
         tip_payload = get_item_tip_version(
             project_id= self.project_id,
             item_lineage_urn= self.linage_urn,
-            token=token
+            token=token,
+            region=self.region
         )
         acc_storage_url = find_tip_storage_id(tip_payload)
         return acc_storage_url
@@ -331,10 +336,12 @@ class ActivityOutputParameterAcc(ActivityOutputParameter):
     folder_id: str
     project_id: str
     file_name: str
+    region: str = "US"  # Default to US region
     _storage_id: Optional[str] = PrivateAttr(default=None)
+    _item_lineage_urn: Optional[str] = PrivateAttr(default=None)
 
     def work_item_arg_3lo(self, token_3lo: str) -> dict[str, Any]:
-     storage_id = create_storage(project_id=self.project_id, folder_urn=self.folder_id, file_name=self.file_name, token=token_3lo)
+     storage_id = create_storage(project_id=self.project_id, folder_urn=self.folder_id, file_name=self.file_name, token=token_3lo, region=self.region)
      self._storage_id = storage_id
      return {
             self.name: {
@@ -343,19 +350,52 @@ class ActivityOutputParameterAcc(ActivityOutputParameter):
                 "headers": {"Authorization": f"Bearer {token_3lo}"},
             }
         }
-    
+
     def create_acc_item(self, token: str):
         if not self._storage_id:
            raise RuntimeError("No storage have being creaded")
-           
-        resp = create_item_with_first_version(
-            project_id=self.project_id,
-            folder_urn=self.folder_id,
-            file_name=self.file_name,
-            storage_id=self._storage_id,
-            token=token
+
+        # Check if file already exists in the folder
+        item_id = find_item_by_name(
+            self.project_id,
+            self.folder_id,
+            self.file_name,
+            token,
+            region=self.region
         )
+
+        if item_id:
+            # File exists → create new version
+            # Store the lineage URN for later use
+            self._item_lineage_urn = item_id
+            resp = create_version_for_item(
+                project_id=self.project_id,
+                item_id=item_id,
+                file_name=self.file_name,
+                storage_id=self._storage_id,
+                token=token,
+                region=self.region
+            )
+        else:
+            # File doesn't exist → create new item with first version
+            resp = create_item_with_first_version(
+                project_id=self.project_id,
+                folder_urn=self.folder_id,
+                file_name=self.file_name,
+                storage_id=self._storage_id,
+                token=token,
+                region=self.region
+            )
+            # Store the lineage URN from response
+            self._item_lineage_urn = resp["data"]["id"]
+
         return resp
+
+    def get_lineage_urn(self) -> str:
+        """Get the item lineage URN for viewer."""
+        if not self._item_lineage_urn:
+            raise RuntimeError("Item lineage URN not available - call create_acc_item first")
+        return self._item_lineage_urn
 
 class WorkItemAcc(WorkItem):
 
@@ -385,3 +425,110 @@ class WorkItemAcc(WorkItem):
             raise RuntimeError("No work item id returned from run_public_work_item")
 
         return workitem_id
+
+    def execute_and_finalize(
+        self,
+        token_2lo: str,
+        token_3lo: str,
+        max_wait: int = 600,
+        interval: int = 10,
+        progress_callback = None,
+        region: str = "US"
+    ) -> dict[str, Any]:
+        """
+        Execute work item and automatically finalize ACC output items.
+
+        Args:
+            token_2lo: 2-legged OAuth token for Design Automation API
+            token_3lo: 3-legged OAuth token for ACC resource access
+            max_wait: Maximum wait time in seconds
+            interval: Polling interval in seconds
+            progress_callback: Optional callback function for progress updates (msg, percentage)
+            region: ACC region - "US" (default) or "EMEA"/"EU"
+
+        Returns:
+            Dictionary with status and output parameter results including version URNs
+        """
+        def report_progress(message: str, percentage: float):
+            """Helper to report progress if callback is provided"""
+            if progress_callback:
+                progress_callback(message, percentage)
+
+        # Build arguments
+        report_progress("Building work item arguments...", 35)
+        args = self.build_arguments_3lo(token_3lo)
+
+        # Submit work item
+        report_progress("Submitting work item to Design Automation...", 40)
+        response = run_work_item(
+            token=token_2lo,
+            full_activity_alias=self.activity_full_alias,
+            work_item_args=args,
+            region=region
+        )
+
+        work_item_id = response.get("id")
+        if not work_item_id:
+            raise RuntimeError("No work item id returned")
+
+        report_progress(f"Work item submitted: {work_item_id[:8]}...", 45)
+
+        # Poll for completion with progress updates
+        elapsed = 0
+        while elapsed < max_wait:
+            time.sleep(interval)
+            elapsed += interval
+
+            # Get status
+            status_response = get_workitem_status(work_item_id, token_2lo, region=region)
+            status = status_response.get("status", "pending")
+
+            # Calculate progress (45% to 75% during execution)
+            execution_progress = 45 + min(30, (elapsed / max_wait) * 30)
+            report_progress(f"Design Automation running... ({status})", execution_progress)
+
+            # Check if complete (all terminal states)
+            if status in ["success", "failed", "failedInstructions", "failedUpload", "failedDownload", "cancelled"]:
+                if status != "success":
+                    # Get report URL for debugging
+                    report_url = status_response.get("reportUrl", "No report URL available")
+
+                    # Fetch the actual report content
+                    report_content = ""
+                    if report_url and report_url != "No report URL available":
+                        report_content = fetch_report_content(report_url)
+
+                    error_msg = (
+                        f"Work item failed with status: {status}\n"
+                        f"Report URL: {report_url}\n\n"
+                        f"=== REPORT CONTENT ===\n"
+                        f"{report_content}\n"
+                        f"======================\n"
+                    )
+                    raise RuntimeError(error_msg)
+                break
+
+        report_progress("Design Automation completed!", 75)
+
+        # Automatically finalize ACC output parameters
+        report_progress("Creating ACC version...", 80)
+        output_results = {}
+        for param in self.parameters:
+            if isinstance(param, ActivityOutputParameterAcc):
+                acc_response = param.create_acc_item(token=token_3lo)
+
+                # Get the lineage URN - this is stored internally after create_acc_item
+                lineage_urn = param.get_lineage_urn()
+
+                output_results[param.name] = {
+                    "version_urn": lineage_urn,
+                    "response": acc_response
+                }
+
+        report_progress("ACC version created successfully!", 85)
+
+        return {
+            "status": "success",
+            "work_item_id": work_item_id,
+            "outputs": output_results
+        }
