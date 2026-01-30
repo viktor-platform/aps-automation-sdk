@@ -480,8 +480,7 @@ class WorkItemAcc(WorkItem):
         token_3lo: str,
         max_wait: int = 600,
         interval: int = 10,
-        progress_callback = None,
-        region: str = "US"
+        progress_callback = None
     ) -> dict[str, Any]:
         """
         Execute work item and automatically finalize ACC output items.
@@ -492,10 +491,12 @@ class WorkItemAcc(WorkItem):
             max_wait: Maximum wait time in seconds
             interval: Polling interval in seconds
             progress_callback: Optional callback function for progress updates (msg, percentage)
-            region: ACC region - "US" (default) or "EMEA"/"EU"
 
         Returns:
             Dictionary with status and output parameter results including version URNs
+
+        Note:
+            ACC region is automatically detected from the project hub.
         """
         def report_progress(message: str, percentage: float):
             """Helper to report progress if callback is provided"""
@@ -511,8 +512,7 @@ class WorkItemAcc(WorkItem):
         response = run_work_item(
             token=token_2lo,
             full_activity_alias=self.activity_full_alias,
-            work_item_args=args,
-            region=region
+            work_item_args=args
         )
 
         work_item_id = response.get("id")
@@ -528,7 +528,7 @@ class WorkItemAcc(WorkItem):
             elapsed += interval
 
             # Get status
-            status_response = get_workitem_status(work_item_id, token_2lo, region=region)
+            status_response = get_workitem_status(work_item_id, token_2lo)
             status = status_response.get("status", "pending")
 
             # Calculate progress (45% to 75% during execution)

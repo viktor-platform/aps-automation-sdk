@@ -12,16 +12,8 @@ APS_BASE_URL = "https://developer.api.autodesk.com"
 OSS_V2_BASE_URL = f"{APS_BASE_URL}/oss/v2"
 OSS_V4_BASE_URL = f"{APS_BASE_URL}/oss/v4"
 MD_BASE_URL = f"{APS_BASE_URL}/modelderivative/v2"
+DA_BASE_URL = f"{APS_BASE_URL}/da/us-east/v3"
 AUTH_URL = f"{APS_BASE_URL}/authentication/v2/token"
-
-def get_da_base_url(region: str = "US") -> str:
-    """Get the Design Automation base URL for the specified region."""
-    if region.upper() in ["EMEA", "EU"]:
-        return f"{APS_BASE_URL}/da/eu-west/v3"
-    return f"{APS_BASE_URL}/da/us-east/v3"
-
-# Default to US for backwards compatibility
-DA_BASE_URL = get_da_base_url("US")
 
 def get_nickname(token: str) -> str:
     """
@@ -96,7 +88,7 @@ def register_appbundle(
         description: Annotated[str, "App bundle description"],
         token: Annotated[str, "2Lo Token"]
 )->RegisterBundleResponse:
-    url = f"{DA_BASE_URL}/appbundles" 
+    url = f"{DA_BASE_URL}/appbundles"
     payload = {"id": appBundleId, "engine": engine, "description":description}
     header = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
     r = requests.post(url,headers=header, json=payload)
@@ -147,12 +139,12 @@ def dowload_from_signed_url(
     """
     r = requests.get(signed_url, timeout=120)
     r.raise_for_status()
-    
+
     with open(output_path, "wb") as f:
         f.write(r.content)
-    
+
     return r.status_code
-        
+
 def create_activity_alias(
     activity_id: str, alias_id: str, version: int, token: str
 ) -> dict[str, Any]:
@@ -177,17 +169,16 @@ def create_activity(
 ) -> dict:
     url = f"{DA_BASE_URL}/activities"
     r = requests.post(url, headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"}, json=payload, timeout=30)
-    
+
     if r.status_code != 200:
         print(f" Error found: {r.text=}")
-    
+
     r.raise_for_status()
     return r.json()
 
 
-def run_work_item(token: str, full_activity_alias: str, work_item_args: dict[str,Any], region: str = "US"):
-    da_url = get_da_base_url(region)
-    url = f"{da_url}/workitems"
+def run_work_item(token: str, full_activity_alias: str, work_item_args: dict[str,Any]):
+    url = f"{DA_BASE_URL}/workitems"
     payload = {
         "activityId": full_activity_alias,
         "arguments": work_item_args
@@ -213,21 +204,20 @@ def run_public_work_item(token: str, full_activity_alias: str, work_item_args: d
     import pprint
     pprint.pp(f"{payload=}")
     r = requests.post(url, headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json","x-ads-workitem-signature": signature}, json=payload, timeout=30)
-    
+
     if r.status_code != 200:
         print(f" Error found: {r.text=}")
-    
+
     r.raise_for_status()
     return r.json()
 
 
 
-def get_workitem_status(workitem_id: str, token: str, region: str = "US") -> dict[str, Any]:
+def get_workitem_status(workitem_id: str, token: str) -> dict[str, Any]:
     """
     Get the current status and report URL for a WorkItem.
     """
-    da_url = get_da_base_url(region)
-    url = f"{da_url}/workitems/{workitem_id}"
+    url = f"{DA_BASE_URL}/workitems/{workitem_id}"
     r = requests.get(
         url,
         headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
@@ -238,13 +228,13 @@ def get_workitem_status(workitem_id: str, token: str, region: str = "US") -> dic
 
 
 def poll_workitem_status(workitem_id: str, token: str, max_wait: int = 600, interval: int = 10) -> dict[str, Any]:
-    
+
     elapsed = 0
     logging.info("Polling work item status, id=%s", workitem_id)
 
     last_status = ""
     status_resp = {}
-    
+
     while elapsed < max_wait:
         status_resp = get_workitem_status(workitem_id, token)
         last_status = status_resp.get("status", "")
