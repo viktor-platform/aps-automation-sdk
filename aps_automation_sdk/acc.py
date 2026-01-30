@@ -18,6 +18,56 @@ def bearer(token: str, region: str = "US") -> dict[str, str]:
     return headers
 
 
+def get_project_hub_id(project_id: str, token: str) -> str:
+    """Get the hub ID from a project."""
+    url = f"{DATA_V1}/projects/{project_id}"
+    headers = {"Authorization": f"Bearer {token}"}
+    r = requests.get(url, headers=headers, timeout=30)
+    r.raise_for_status()
+
+    # Extract hub ID from project relationships
+    relationships = r.json().get("data", {}).get("relationships", {})
+    hub_data = relationships.get("hub", {}).get("data", {})
+    hub_id = hub_data.get("id")
+
+    if not hub_id:
+        raise RuntimeError(f"Could not extract hub_id from project {project_id}")
+
+    return hub_id
+
+
+def get_hub_region(hub_id: str, token: str) -> str:
+    """Get the region of a hub. Returns 'US' or 'EMEA'."""
+    url = f"{PROJECTS_V1}/hubs/{hub_id}"
+    headers = {"Authorization": f"Bearer {token}"}
+    r = requests.get(url, headers=headers, timeout=30)
+    r.raise_for_status()
+
+    # Extract region from hub attributes
+    attributes = r.json().get("data", {}).get("attributes", {})
+    region = attributes.get("region", "US")
+
+    # Normalize region value
+    if region.upper() in ["EMEA", "EU"]:
+        return "EMEA"
+    return "US"
+
+
+def detect_region_from_project(project_id: str, token: str) -> str:
+    """
+    Automatically detect the ACC region from a project ID.
+
+    This makes two API calls:
+    1. GET /data/v1/projects/{project_id} to get hub_id
+    2. GET /project/v1/hubs/{hub_id} to get region
+
+    Returns 'US' or 'EMEA'.
+    """
+    hub_id = get_project_hub_id(project_id, token)
+    region = get_hub_region(hub_id, token)
+    return region
+
+
 def item_from_version(project_id: str, version_urn: str, token: str) -> str:
     """Get item ID from version URN."""
     if "?version=" not in version_urn:

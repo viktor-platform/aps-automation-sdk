@@ -22,7 +22,15 @@ from .core import (
 )
 from .utils import create_bucket
 from .dsl import RegisterBundleResponse, UploadParameters
-from aps_automation_sdk.acc import get_item_tip_version, find_tip_storage_id, create_storage, create_item_with_first_version, create_version_for_item, find_item_by_name
+from aps_automation_sdk.acc import (
+    get_item_tip_version,
+    find_tip_storage_id,
+    create_storage,
+    create_item_with_first_version,
+    create_version_for_item,
+    find_item_by_name,
+    detect_region_from_project
+)
 
 class ActivityParameter(BaseModel):
     name: str
@@ -256,14 +264,33 @@ class WorkItem(BaseModel):
 class ActivityInputParameterAcc(ActivityInputParameter):
     linage_urn: str | None = None
     project_id: str | None = None
-    region: str = "US"  # Default to US region
+    region: Optional[str] = None  # Optional: auto-detects from project if not provided
+    _cached_region: Optional[str] = PrivateAttr(default=None)
+
+    def _get_region(self, token: str) -> str:
+        """Get region, auto-detecting if not explicitly set."""
+        # If region was explicitly provided, use it
+        if self.region:
+            return self.region
+
+        # Use cached region if available
+        if self._cached_region:
+            return self._cached_region
+
+        # Auto-detect region from project
+        if not self.project_id:
+            raise RuntimeError("Cannot auto-detect region: project_id is required")
+
+        self._cached_region = detect_region_from_project(self.project_id, token)
+        return self._cached_region
 
     def get_acc_storage_url(self, token: str) -> str:
+        detected_region = self._get_region(token)
         tip_payload = get_item_tip_version(
-            project_id= self.project_id,
-            item_lineage_urn= self.linage_urn,
+            project_id=self.project_id,
+            item_lineage_urn=self.linage_urn,
             token=token,
-            region=self.region
+            region=detected_region
         )
         acc_storage_url = find_tip_storage_id(tip_payload)
         return acc_storage_url
@@ -336,12 +363,31 @@ class ActivityOutputParameterAcc(ActivityOutputParameter):
     folder_id: str
     project_id: str
     file_name: str
-    region: str = "US"  # Default to US region
+    region: Optional[str] = None  # Optional: auto-detects from project if not provided
     _storage_id: Optional[str] = PrivateAttr(default=None)
     _item_lineage_urn: Optional[str] = PrivateAttr(default=None)
+    _cached_region: Optional[str] = PrivateAttr(default=None)
+
+    def _get_region(self, token: str) -> str:
+        """Get region, auto-detecting if not explicitly set."""
+        # If region was explicitly provided, use it
+        if self.region:
+            return self.region
+
+        # Use cached region if available
+        if self._cached_region:
+            return self._cached_region
+
+        # Auto-detect region from project
+        if not self.project_id:
+            raise RuntimeError("Cannot auto-detect region: project_id is required")
+
+        self._cached_region = detect_region_from_project(self.project_id, token)
+        return self._cached_region
 
     def work_item_arg_3lo(self, token_3lo: str) -> dict[str, Any]:
-     storage_id = create_storage(project_id=self.project_id, folder_urn=self.folder_id, file_name=self.file_name, token=token_3lo, region=self.region)
+     detected_region = self._get_region(token_3lo)
+     storage_id = create_storage(project_id=self.project_id, folder_urn=self.folder_id, file_name=self.file_name, token=token_3lo, region=detected_region)
      self._storage_id = storage_id
      return {
             self.name: {
@@ -355,13 +401,15 @@ class ActivityOutputParameterAcc(ActivityOutputParameter):
         if not self._storage_id:
            raise RuntimeError("No storage have being creaded")
 
+        detected_region = self._get_region(token)
+
         # Check if file already exists in the folder
         item_id = find_item_by_name(
             self.project_id,
             self.folder_id,
             self.file_name,
             token,
-            region=self.region
+            region=detected_region
         )
 
         if item_id:
@@ -374,7 +422,7 @@ class ActivityOutputParameterAcc(ActivityOutputParameter):
                 file_name=self.file_name,
                 storage_id=self._storage_id,
                 token=token,
-                region=self.region
+                region=detected_region
             )
         else:
             # File doesn't exist → create new item with first version
@@ -384,7 +432,7 @@ class ActivityOutputParameterAcc(ActivityOutputParameter):
                 file_name=self.file_name,
                 storage_id=self._storage_id,
                 token=token,
-                region=self.region
+                region=detected_region
             )
             # Store the lineage URN from response
             self._item_lineage_urn = resp["data"]["id"]
