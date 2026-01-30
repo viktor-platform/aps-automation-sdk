@@ -474,7 +474,7 @@ class WorkItemAcc(WorkItem):
 
         return workitem_id
 
-    def execute_and_finalize(
+    def execute_private_activity(
         self,
         token_2lo: str,
         token_3lo: str,
@@ -483,7 +483,7 @@ class WorkItemAcc(WorkItem):
         progress_callback = None
     ) -> dict[str, Any]:
         """
-        Execute work item and automatically finalize ACC output items.
+        Execute private activity work item and automatically finalize ACC output items.
 
         Args:
             token_2lo: 2-legged OAuth token for Design Automation API
