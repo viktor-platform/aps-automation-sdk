@@ -1,6 +1,6 @@
 import json
 import time
-from typing import Literal, Any, Optional
+from typing import Literal, Any, Optional, Callable
 from pydantic import BaseModel, Field, PrivateAttr
 from .core import (
     get_signed_s3_upload,
@@ -480,7 +480,7 @@ class WorkItemAcc(WorkItem):
         token_3lo: str,
         max_wait: int = 600,
         interval: int = 10,
-        progress_callback = None
+        progress_callback: Callable[[str, float], None] | None = None
     ) -> dict[str, Any]:
         """
         Execute private activity work item and automatically finalize ACC output items.
@@ -490,7 +490,8 @@ class WorkItemAcc(WorkItem):
             token_3lo: 3-legged OAuth token for ACC resource access
             max_wait: Maximum wait time in seconds
             interval: Polling interval in seconds
-            progress_callback: Optional callback function for progress updates (msg, percentage)
+            progress_callback: Optional callback function for progress updates.
+                Called with (message: str, percentage: float) where percentage is 0-100.
 
         Returns:
             Dictionary with status and output parameter results including version URNs
