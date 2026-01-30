@@ -37,6 +37,12 @@ from .model_derivative import (
     get_translation_info,
 )
 
+from .acc import (
+    detect_region_from_project,
+    get_hub_region,
+    get_project_hub_id,
+)
+
 __all__ = [
     "Activity",
     "ActivityParameter",
@@ -67,6 +73,9 @@ __all__ = [
     "get_translation_status",
     "translate_file_in_oss",
     "get_translation_info",
+    "detect_region_from_project",
+    "get_hub_region",
+    "get_project_hub_id",
 ]
 
 __version__ = "0.1.0"
