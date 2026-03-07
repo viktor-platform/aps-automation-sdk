@@ -41,6 +41,37 @@ CLIENT_SECRET=your_client_secret_here
 
 Get your credentials from the [APS Developer Portal](https://aps.autodesk.com/).
 
+## AI-Assisted Development
+
+You can use AI agents to speed up development, but they must always use repository context and APS documentation context.
+
+### Mandatory context files
+
+- `AGENTS.md` (canonical instruction source for this repo)
+- `CLAUDE.md` (imports `AGENTS.md`)
+- `AGENTS.md` → [`## Method-to-APS Documentation Matrix`](AGENTS.md#method-to-aps-documentation-matrix)
+
+Before changing code, make sure the agent reads these files and follows the links/references they contain (especially APS method references in `AGENTS.md`).
+
+### APS documentation requirement
+
+If a method is added or modified, verify it against Autodesk APS docs before finalizing changes.
+Use `AGENTS.md` → [`## Method-to-APS Documentation Matrix`](AGENTS.md#method-to-aps-documentation-matrix) as the required mapping source.
+
+### Refresh repository context for agents
+
+If you add or modify methods, regenerate `llms-full.txt` so external agents always have fresh context.
+
+Run:
+
+```bash
+python skills/full-llm-export/scripts/export_repo_context.py --root . --output llms-full.txt
+```
+
+Or invoke the local skill:
+
+- `$full-llm-export`
+
 ## Road Map
 
 - Improve type hints and docstrings

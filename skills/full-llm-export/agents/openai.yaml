@@ -1,0 +1,4 @@
+interface:
+  display_name: "Full LLM Export"
+  short_description: "Export repository context to llms-full.txt"
+  default_prompt: "Use $full-llm-export to generate llms-full.txt for this repository."
