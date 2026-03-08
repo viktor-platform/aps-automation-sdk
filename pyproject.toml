@@ -16,6 +16,12 @@ dependencies = [
 examples = [
     "ipykernel>=7.1.0",
 ]
+signing = [
+    "cryptography>=44.0.0",
+]
+
+[project.scripts]
+aps-automation = "aps_automation_sdk.cli:cli"
 
 [tool.setuptools]
 packages = ["aps_automation_sdk"]
