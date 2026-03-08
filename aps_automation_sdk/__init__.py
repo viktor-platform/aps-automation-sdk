@@ -12,6 +12,10 @@ from .classes import (
     UploadActivityInputParameter,
     WorkItemAcc
 )
+from .core import (
+    WorkItemPollEvent,
+    PollCallback,
+)
 
 from .utils import (
     set_nickname,
@@ -57,6 +61,8 @@ __all__ = [
     "ActivityOutputParameterAcc",
     "UploadActivityInputParameter",
     "WorkItemAcc",
+    "WorkItemPollEvent",
+    "PollCallback",
     "get_token",
     "get_nickname",
     "get_forgeapp_profile",

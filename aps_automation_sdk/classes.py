@@ -14,8 +14,9 @@ from .core import (
     create_appbundle_alias,
     register_appbundle,
     run_work_item,
+    PollCallback,
     poll_workitem_status,
-    run_public_work_item
+    run_public_work_item,
 )
 from .utils import create_bucket
 from .dsl import RegisterBundleResponse, UploadParameters
@@ -242,12 +243,37 @@ class WorkItem(BaseModel):
             raise RuntimeError("No work item id returned from run_work_item")
         return work_item_id
     
-    def poll(self, work_item_id: str, token: str, max_wait: int = 600, interval: int = 10) -> dict[str, Any]:
-        return poll_workitem_status(work_item_id, token, max_wait=max_wait, interval=interval)
+    def poll(
+        self,
+        work_item_id: str,
+        token: str,
+        max_wait: int = 600,
+        interval: int = 10,
+        on_event: PollCallback | None = None,
+    ) -> dict[str, Any]:
+        return poll_workitem_status(
+            work_item_id,
+            token,
+            max_wait=max_wait,
+            interval=interval,
+            on_event=on_event,
+        )
     
-    def execute(self, token: str, max_wait: int = 600, interval: int = 10) -> dict[str, Any]:
+    def execute(
+        self,
+        token: str,
+        max_wait: int = 600,
+        interval: int = 10,
+        on_event: PollCallback | None = None,
+    ) -> dict[str, Any]:
         work_item_id = self.run(token)
-        return self.poll(work_item_id, token, max_wait=max_wait, interval=interval)
+        return self.poll(
+            work_item_id,
+            token,
+            max_wait=max_wait,
+            interval=interval,
+            on_event=on_event,
+        )
     
 
 class ActivityInputParameterAcc(ActivityInputParameter):
@@ -385,3 +411,21 @@ class WorkItemAcc(WorkItem):
             raise RuntimeError("No work item id returned from run_public_work_item")
 
         return workitem_id
+
+    def execute(
+        self,
+        token: str,
+        max_wait: int = 600,
+        interval: int = 10,
+        on_event: PollCallback | None = None,
+        *,
+        activity_signature: str,
+    ) -> dict[str, Any]:
+        workitem_id = self.run_public_activity(token3lo=token, activity_signature=activity_signature)
+        return poll_workitem_status(
+            workitem_id=workitem_id,
+            token=token,
+            max_wait=max_wait,
+            interval=interval,
+            on_event=on_event,
+        )

@@ -2,7 +2,8 @@ import requests
 import time
 import logging
 import os
-from typing import Annotated, Any
+from dataclasses import dataclass
+from typing import Annotated, Any, Callable, Literal
 from dotenv import load_dotenv
 from .dsl import RegisterBundleResponse, UploadParameters, GetSignedS3UrlsResponse, CompleteUploadRequest
 
@@ -14,6 +15,28 @@ OSS_V4_BASE_URL = f"{APS_BASE_URL}/oss/v4"
 MD_BASE_URL = f"{APS_BASE_URL}/modelderivative/v2" 
 DA_BASE_URL = f"{APS_BASE_URL}/da/us-east/v3" 
 AUTH_URL = f"{APS_BASE_URL}/authentication/v2/token"
+
+KnownWorkItemStatus = Literal[
+    "pending",
+    "inprogress",
+    "success",
+    "failedDownload",
+    "failedInstructions",
+    "failedUpload",
+    "failedLimitProcessingTime",
+    "cancelled",
+]
+PollCallback = Callable[["WorkItemPollEvent"], None]
+
+
+@dataclass(frozen=True)
+class WorkItemPollEvent:
+    workitem_id: str
+    status: str
+    elapsed_seconds: int
+    max_wait_seconds: int
+    report_url: str | None
+    is_terminal: bool
 
 def get_nickname(token: str) -> str:
     """
@@ -227,23 +250,49 @@ def get_workitem_status(workitem_id: str, token: str) -> dict[str, Any]:
     return r.json()
 
 
-def poll_workitem_status(workitem_id: str, token: str, max_wait: int = 600, interval: int = 10) -> dict[str, Any]:
-    
+def is_terminal_workitem_status(status: str) -> bool:
+    normalized = status.strip().lower()
+    return normalized == "success" or normalized == "cancelled" or normalized.startswith("failed")
+
+
+def poll_workitem_status(
+    workitem_id: str,
+    token: str,
+    max_wait: int = 600,
+    interval: int = 10,
+    on_event: PollCallback | None = None,
+) -> dict[str, Any]:
     elapsed = 0
     logging.info("Polling work item status, id=%s", workitem_id)
 
     last_status = ""
     status_resp = {}
     
-    while elapsed < max_wait:
+    while elapsed <= max_wait:
         status_resp = get_workitem_status(workitem_id, token)
-        last_status = status_resp.get("status", "")
-        report_url = status_resp.get('reportUrl')
+        last_status = str(status_resp.get("status", ""))
+        report_url = status_resp.get("reportUrl")
+        is_terminal = is_terminal_workitem_status(last_status)
+
+        if on_event:
+            on_event(
+                WorkItemPollEvent(
+                    workitem_id=workitem_id,
+                    status=last_status,
+                    elapsed_seconds=elapsed,
+                    max_wait_seconds=max_wait,
+                    report_url=report_url,
+                    is_terminal=is_terminal,
+                )
+            )
+
         logging.info("[%3ds] status=%s report_url=%s", elapsed, last_status, report_url)
-        if last_status in {"success", "failedUpload", "cancelled"}:
+        if is_terminal:
             report = status_resp.get("reportUrl")
             if report:
                 logging.info("Report URL: %s", report)
+            break
+        if elapsed >= max_wait:
             break
         time.sleep(interval)
         elapsed += interval
