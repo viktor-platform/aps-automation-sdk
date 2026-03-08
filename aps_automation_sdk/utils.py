@@ -39,6 +39,16 @@ def get_forgeapp_profile(token: str) -> dict[str, Any]:
     return r.json()
 
 
+def parse_json_response_or_none(response: requests.Response) -> Any | None:
+    body = response.text
+    if not body or not body.strip():
+        return None
+    try:
+        return response.json()
+    except ValueError:
+        return None
+
+
 def upload_public_key(token: str, public_key: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(public_key, dict) or not public_key:
         raise ValueError("public_key must be a non-empty dictionary")
@@ -49,7 +59,16 @@ def upload_public_key(token: str, public_key: dict[str, Any]) -> dict[str, Any]:
         timeout=30,
     )
     r.raise_for_status()
-    return r.json()
+    payload = parse_json_response_or_none(r)
+    if isinstance(payload, dict):
+        return payload
+
+    profile = get_forgeapp_profile(token)
+    if isinstance(profile, dict):
+        return profile
+    if isinstance(profile, str):
+        return {"nickname": profile}
+    return {"forgeappProfile": profile}
 
 
 def set_nickname(token: str, nickname: str) -> str:
@@ -57,33 +76,41 @@ def set_nickname(token: str, nickname: str) -> str:
     Try to set the nickname.
     Returns the nickname that actually applies.
     """
+    url = f"{DA_BASE_URL}/forgeapps/me"
     r = requests.patch(
-        FORGEAPPS_ME_URL,
+        url,
         headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
         json={"nickname": nickname},
         timeout=30,
     )
 
     if r.status_code == 200:
-        return get_nickname(token)
+        return nickname
 
     if r.status_code == 409:
-        # App already has resources, nickname is locked, keep the current one.
+        # App already has resources, nickname is locked, keep the current one
         return get_nickname(token)
 
+    # Often 400 means the nickname is already taken
     try:
-        details: Any = r.json()
+        details = r.json()
     except Exception:
         details = r.text
     raise RuntimeError(f"Could not set nickname, status {r.status_code}, details {details}")
 
 
 def get_nickname(token: str) -> str:
-    profile = get_forgeapp_profile(token)
-    nickname = profile.get("nickname")
-    if not isinstance(nickname, str) or not nickname:
-        raise RuntimeError(f"Unexpected forgeapps/me profile response: {profile}")
-    return nickname
+    url = f"{DA_BASE_URL}/forgeapps/me"
+    r = requests.get(
+        url,
+        headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+        timeout=30,
+    )
+    r.raise_for_status()
+    # The API returns a JSON object with nickname and publicKey
+    # Example response: {"nickname": "viktortest", "publicKey": {...}}
+    response_data = r.json()
+    return response_data.get("nickname", response_data)
 
 
 def create_bucket(
