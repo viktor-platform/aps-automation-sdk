@@ -1,17 +1,3 @@
-"""
-CLI entry-point for APS Automation SDK (``aps-automation`` command).
-
-Commands::
-
-    signing generate   Generate an RSA private key JSON.
-    signing export     Export the public key JSON from a private key file.
-    signing sign       Sign an activity ID with a private key.
-    public-key info    Fetch the current forgeapps/me profile.
-    public-key upload  Upload a public key JSON to forgeapps/me.
-
-Credentials are resolved from ``CLIENT_ID`` and ``CLIENT_SECRET`` environment
-variables or a ``.env`` file, with interactive prompts as a fallback.
-"""
 import argparse
 import getpass
 import json
@@ -59,28 +45,48 @@ def resolve_token_from_credentials() -> Annotated[str, "2-legged OAuth access to
 
 
 def run_signing_generate(args: Annotated[argparse.Namespace, "Parsed CLI arguments"]) -> Annotated[int, "Process exit code"]:
-    """Handler for ``aps-automation signing generate``."""
+    """
+    Generate a new RSA private/public key pair and save the private key to a JSON file.
+
+    The output file contains the key material in Autodesk-compatible JSON format.
+    Keep this file secret — **never commit it to version control**.
+    """
     generate_key_file(keyfile=args.keyfile, key_size=args.key_size)
     print(f"Private key created at: {Path(args.keyfile).resolve()}")
     return 0
 
 
 def run_signing_export(args: Annotated[argparse.Namespace, "Parsed CLI arguments"]) -> Annotated[int, "Process exit code"]:
-    """Handler for ``aps-automation signing export``."""
+    """
+    Export the public key from a private key JSON file into a separate public key JSON file.
+
+    The output file contains only the ``Exponent`` and ``Modulus`` fields required by
+    ``PATCH /forgeapps/me``. It is safe to share and can be committed.
+    """
     export_public_key(keyfile=args.keyfile, pubkeyfile=args.pubkeyfile)
     print(f"Public key created at: {Path(args.pubkeyfile).resolve()}")
     return 0
 
 
 def run_signing_sign(args: Annotated[argparse.Namespace, "Parsed CLI arguments"]) -> Annotated[int, "Process exit code"]:
-    """Handler for ``aps-automation signing sign``."""
+    """
+    Sign a full activity ID using RSA PKCS#1 v1.5 SHA-256 and print the Base64 signature.
+
+    The activity ID must be the fully-qualified form: ``nickname.ActivityName+alias``.
+    Pass the printed signature to ``WorkItemAcc.run_public_activity(activity_signature=...)``.
+    """
     signature = sign_activity(keyfile=args.keyfile, activity_id=args.activity_id)
     print(signature)
     return 0
 
 
 def run_public_key_info(args: Annotated[argparse.Namespace, "Parsed CLI arguments"]) -> Annotated[int, "Process exit code"]:
-    """Handler for ``aps-automation public-key info``. Prints the forgeapps/me profile."""
+    """
+    Fetch and print the current ``GET /forgeapps/me`` profile as JSON.
+
+    Use this to verify the registered nickname and confirm the public key was
+    uploaded successfully after running ``public-key upload``.
+    """
     token = resolve_token_from_credentials()
     profile = get_forgeapp_profile(token=token)
     print(json.dumps(profile, indent=2))
@@ -107,11 +113,17 @@ def load_public_key(
 
 
 def run_public_key_upload(args: Annotated[argparse.Namespace, "Parsed CLI arguments"]) -> Annotated[int, "Process exit code"]:
-    """Handler for ``aps-automation public-key upload``. Optionally sets a nickname first."""
+    """
+    Upload a public key JSON to ``PATCH /forgeapps/me`` so APS can verify signed workitems.
+
+    If ``--nickname`` is provided, the APS app nickname is **registered/changed** first via
+    ``PATCH /forgeapps/me`` before the key is uploaded. A 409 response on nickname means the
+    app already has DA resources and the existing nickname is kept instead.
+    """
     token = resolve_token_from_credentials()
     if args.nickname:
         applied = set_nickname(token=token, nickname=args.nickname)
-        print(f"Using nickname: {applied}")
+        print(f"Nickname set to: {applied}")
 
     public_key = load_public_key(args.pubkeyfile)
     response = upload_public_key(token=token, public_key=public_key)
@@ -125,36 +137,67 @@ def build_parser() -> Annotated[argparse.ArgumentParser, "Configured CLI parser"
 
     Registers all subcommands and attaches handler functions via ``set_defaults``.
     """
-    parser = argparse.ArgumentParser(prog="aps-automation", description="APS Automation SDK CLI")
+    parser = argparse.ArgumentParser(
+        prog="aps-automation",
+        description="APS Automation SDK CLI — manage signing keys, upload public keys, and sign activity IDs for APS Design Automation public activities.",
+    )
     subparsers = parser.add_subparsers(dest="command")
 
-    signing_parser = subparsers.add_parser("signing", help="Signing utilities")
+    signing_parser = subparsers.add_parser(
+        "signing",
+        help="RSA key generation and activity-ID signing utilities.",
+    )
     signing_subparsers = signing_parser.add_subparsers(dest="signing_command")
 
-    generate_parser = signing_subparsers.add_parser("generate", help="Generate RSA private key JSON")
-    generate_parser.add_argument("--keyfile", required=True, help="Output private key JSON path")
-    generate_parser.add_argument("--key-size", type=int, default=2048, help="RSA key size")
+    generate_parser = signing_subparsers.add_parser(
+        "generate",
+        help="Generate a new RSA private key JSON file (keep secret, never commit).",
+    )
+    generate_parser.add_argument("--keyfile", required=True, help="Path where the private key JSON will be saved.")
+    generate_parser.add_argument("--key-size", type=int, default=2048, help="RSA key size in bits (default: 2048).")
     generate_parser.set_defaults(func=run_signing_generate)
 
-    export_parser = signing_subparsers.add_parser("export", help="Export public key JSON from private key JSON")
-    export_parser.add_argument("--keyfile", required=True, help="Input private key JSON path")
-    export_parser.add_argument("--pubkeyfile", required=True, help="Output public key JSON path")
+    export_parser = signing_subparsers.add_parser(
+        "export",
+        help="Extract the public key (Exponent + Modulus) from a private key JSON into a separate file for upload.",
+    )
+    export_parser.add_argument("--keyfile", required=True, help="Path to the private key JSON file.")
+    export_parser.add_argument("--pubkeyfile", required=True, help="Path where the public key JSON will be saved.")
     export_parser.set_defaults(func=run_signing_export)
 
-    sign_parser = signing_subparsers.add_parser("sign", help="Sign an activity id")
-    sign_parser.add_argument("--keyfile", required=True, help="Input private key JSON path")
-    sign_parser.add_argument("--activity-id", required=True, help="Activity id to sign")
+    sign_parser = signing_subparsers.add_parser(
+        "sign",
+        help="Sign a fully-qualified activity ID (nickname.Activity+alias) and print the Base64 signature.",
+    )
+    sign_parser.add_argument("--keyfile", required=True, help="Path to the private key JSON file.")
+    sign_parser.add_argument(
+        "--activity-id",
+        required=True,
+        help="Full activity ID to sign, e.g. myNickname.MyActivity+prod.",
+    )
     sign_parser.set_defaults(func=run_signing_sign)
 
-    public_key_parser = subparsers.add_parser("public-key", help="forgeapps/me public key operations")
+    public_key_parser = subparsers.add_parser(
+        "public-key",
+        help="Manage the public key registered on your APS app (PATCH/GET /forgeapps/me).",
+    )
     public_key_subparsers = public_key_parser.add_subparsers(dest="public_key_command")
 
-    info_parser = public_key_subparsers.add_parser("info", help="Get forgeapps/me profile")
+    info_parser = public_key_subparsers.add_parser(
+        "info",
+        help="Print the current forgeapps/me profile (nickname + registered public key).",
+    )
     info_parser.set_defaults(func=run_public_key_info)
 
-    upload_parser = public_key_subparsers.add_parser("upload", help="Upload public key to forgeapps/me")
-    upload_parser.add_argument("--pubkeyfile", required=True, help="Public key JSON path")
-    upload_parser.add_argument("--nickname", help="Optional nickname to set before upload")
+    upload_parser = public_key_subparsers.add_parser(
+        "upload",
+        help="Upload a public key JSON to forgeapps/me so APS can verify signed workitems. Use --nickname to register/change the app nickname at the same time.",
+    )
+    upload_parser.add_argument("--pubkeyfile", required=True, help="Path to the public key JSON file to upload.")
+    upload_parser.add_argument(
+        "--nickname",
+        help="Register or change the APS app nickname before uploading the key (PATCH /forgeapps/me).",
+    )
     upload_parser.set_defaults(func=run_public_key_upload)
 
     return parser
