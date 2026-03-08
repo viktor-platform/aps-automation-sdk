@@ -47,5 +47,44 @@ CLIENT_SECRET=your_client_secret_here
 
 You can use `.env.sample` as a reference. To get your credentials, create an Autodesk Platform Services application at: https://get-started.aps.autodesk.com/
 
+## For Agents
+This repository publishes the following skills:
+
+- `skills/aps-acc-public-activity-signing/`
+
+Use this skill to run APS public activity signing workflows end-to-end:
+- generate RSA keys
+- export and upload public key to `forgeapps/me`
+- sign activity IDs
+- connect signatures to ACC/public workitem execution flows
+
+### For Codex
+Codex reads project skills from `.agents/skills/`.
+
+Install this skill into your local repo:
+
+```bash
+npx skills add https://github.com/viktor-platform/aps-automation-sdk \
+  --skill aps-acc-public-activity-signing \
+  --copy \
+  -a codex \
+  -y
+```
+
+This copies the skill into: `.agents/skills/`
+
+### For Claude Code
+Install this skill for Claude Code:
+
+```bash
+npx skills add https://github.com/viktor-platform/aps-automation-sdk \
+  --skill aps-acc-public-activity-signing \
+  --copy \
+  -a claude-code \
+  -yy
+```
+
+This copies the skill into: `.claude/skills`
+
 ## Contribute
 For contributing and local installation instructions, see [CONTRIBUTING.md](CONTRIBUTING.md).

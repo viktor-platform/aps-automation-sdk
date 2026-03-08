@@ -17,6 +17,8 @@ from .utils import (
     set_nickname,
     get_token,
     get_nickname,
+    get_forgeapp_profile,
+    upload_public_key,
     delete_activity,
     delete_appbundle,
     create_bucket,
@@ -37,6 +39,12 @@ from .model_derivative import (
     get_translation_info,
 )
 
+from .signing import (
+    generate_key_file,
+    export_public_key,
+    sign_activity,
+)
+
 __all__ = [
     "Activity",
     "ActivityParameter",
@@ -51,6 +59,8 @@ __all__ = [
     "WorkItemAcc",
     "get_token",
     "get_nickname",
+    "get_forgeapp_profile",
+    "upload_public_key",
     "delete_activity",
     "delete_appbundle",
     "create_bucket",
@@ -58,6 +68,9 @@ __all__ = [
     "move_or_create_alias",
     "publish_appbundle_update",
     "set_nickname",
+    "generate_key_file",
+    "export_public_key",
+    "sign_activity",
     "safe_base64_encode",
     "to_md_urn",
     "get_revit_version_from_manifest",
