@@ -23,6 +23,8 @@ from .utils import (
     set_nickname,
     get_token,
     get_nickname,
+    get_forgeapp_profile,
+    upload_public_key,
     delete_activity,
     delete_appbundle,
     create_bucket,
@@ -43,6 +45,12 @@ from .model_derivative import (
     get_translation_info,
 )
 
+from .signing import (
+    generate_key_file,
+    export_public_key,
+    sign_activity,
+)
+
 __all__ = [
     "Activity",
     "ActivityParameter",
@@ -57,6 +65,8 @@ __all__ = [
     "WorkItemAcc",
     "get_token",
     "get_nickname",
+    "get_forgeapp_profile",
+    "upload_public_key",
     "delete_activity",
     "delete_appbundle",
     "create_bucket",
@@ -64,6 +74,9 @@ __all__ = [
     "move_or_create_alias",
     "publish_appbundle_update",
     "set_nickname",
+    "generate_key_file",
+    "export_public_key",
+    "sign_activity",
     "safe_base64_encode",
     "to_md_urn",
     "get_revit_version_from_manifest",
@@ -93,12 +106,8 @@ DATA_V2 = f"{APS_BASE_URL}/data/v2"
 DA_V3 = f"{APS_BASE_URL}/da/us-east/v3"
 
 
-def bearer(token: str, region: str = "US") -> dict[str, str]:
-    """Create authorization headers with optional region."""
-    headers = {"Authorization": f"Bearer {token}"}
-    if region.upper() in ["EMEA", "EU"]:
-        headers["x-ads-region"] = "EMEA"
-    return headers
+def bearer(token: str) -> dict[str, str]:
+    return {"Authorization": f"Bearer {token}"}
 
 
 def item_from_version(project_id: str, version_urn: str, token: str) -> str:
@@ -137,10 +146,10 @@ def resolve_parent_folder(project_id: str, any_urn: str, token: str) -> str:
 
 
 def get_item_tip_version(
-    project_id: str, item_lineage_urn: str, token: str, region: str = "US"
+    project_id: str, item_lineage_urn: str, token: str
 ) -> dict[str, Any]:
     url = f"{DATA_V1}/projects/{project_id}/items/{urllib.parse.quote(item_lineage_urn, safe=':')}/tip"
-    r = requests.get(url, headers=bearer(token, region), timeout=30)
+    r = requests.get(url, headers=bearer(token), timeout=30)
     r.raise_for_status()
     return r.json()
 
@@ -160,7 +169,7 @@ def find_tip_storage_id(tip_payload: dict[str, Any]) -> str:
     raise RuntimeError("No storage id found in tip payload")
 
 
-def create_storage(project_id: str, folder_urn: str, file_name: str, token: str, region: str = "US") -> str:
+def create_storage(project_id: str, folder_urn: str, file_name: str, token: str) -> str:
     """POST /data/v1/projects/{project_id}/storage, returns storage objectId"""
     url = f"{DATA_V1}/projects/{project_id}/storage"
     payload = {
@@ -175,22 +184,10 @@ def create_storage(project_id: str, folder_urn: str, file_name: str, token: str,
     }
     r = requests.post(
         url,
-        headers={**bearer(token, region), "Content-Type": "application/vnd.api+json"},
+        headers={**bearer(token), "Content-Type": "application/vnd.api+json"},
         json=payload,
         timeout=30,
     )
-
-    # Enhanced error handling for 403
-    if r.status_code == 403:
-        error_detail = r.text
-        raise RuntimeError(
-            f"403 Forbidden when creating storage. This typically means:\n"
-            f"1. Your Autodesk account needs Admin role in the ACC project (not just Member)\n"
-            f"2. The OAuth token needs to be refreshed after adding data:create scope\n"
-            f"3. The folder might have restricted permissions\n"
-            f"Full error: {error_detail}"
-        )
-
     r.raise_for_status()
     storage_id = r.json().get("data", {}).get("id")
     if not storage_id:
@@ -206,10 +203,10 @@ def to_data_url_json(obj: dict) -> str:
 
 
 def find_item_by_name(
-    project_id: str, folder_urn: str, file_name: str, token: str, region: str = "US"
+    project_id: str, folder_urn: str, file_name: str, token: str
 ) -> str | None:
     url = f"{DATA_V1}/projects/{project_id}/folders/{folder_urn}/contents"
-    r = requests.get(url, headers=bearer(token, region), timeout=30)
+    r = requests.get(url, headers=bearer(token), timeout=30)
     r.raise_for_status()
     for entry in r.json().get("data", []):
         if (
@@ -221,7 +218,7 @@ def find_item_by_name(
 
 
 def create_version_for_item(
-    project_id: str, item_id: str, file_name: str, storage_id: str, token: str, region: str = "US"
+    project_id: str, item_id: str, file_name: str, storage_id: str, token: str
 ) -> dict[str, Any]:
     url = f"{DATA_V1}/projects/{project_id}/versions"
     payload = {
@@ -243,7 +240,7 @@ def create_version_for_item(
     }
     r = requests.post(
         url,
-        headers={**bearer(token, region), "Content-Type": "application/vnd.api+json"},
+        headers={**bearer(token), "Content-Type": "application/vnd.api+json"},
         json=payload,
         timeout=60,
     )
@@ -257,7 +254,6 @@ def create_item_with_first_version(
     file_name: str,
     storage_id: str,
     token: str,
-    region: str = "US",
     version: int = 1,
 ) -> dict[str, Any]:
     """
@@ -297,7 +293,7 @@ def create_item_with_first_version(
     }
     r = requests.post(
         url,
-        headers={**bearer(token, region), "Content-Type": "application/vnd.api+json"},
+        headers={**bearer(token), "Content-Type": "application/vnd.api+json"},
         json=payload,
         timeout=60,
     )
@@ -309,7 +305,6 @@ FILE: aps_automation_sdk/classes.py
 ====================================================================================================
 
 import json
-import time
 from typing import Literal, Any, Optional
 from pydantic import BaseModel, Field, PrivateAttr
 from .core import (
@@ -326,9 +321,7 @@ from .core import (
     register_appbundle,
     run_work_item,
     poll_workitem_status,
-    run_public_work_item,
-    get_workitem_status,
-    fetch_report_content
+    run_public_work_item
 )
 from .utils import create_bucket
 from .dsl import RegisterBundleResponse, UploadParameters
@@ -566,14 +559,12 @@ class WorkItem(BaseModel):
 class ActivityInputParameterAcc(ActivityInputParameter):
     linage_urn: str | None = None
     project_id: str | None = None
-    region: str = "US"  # Default to US region
-
+        
     def get_acc_storage_url(self, token: str) -> str:
         tip_payload = get_item_tip_version(
             project_id= self.project_id,
             item_lineage_urn= self.linage_urn,
-            token=token,
-            region=self.region
+            token=token
         )
         acc_storage_url = find_tip_storage_id(tip_payload)
         return acc_storage_url
@@ -646,12 +637,10 @@ class ActivityOutputParameterAcc(ActivityOutputParameter):
     folder_id: str
     project_id: str
     file_name: str
-    region: str = "US"  # Default to US region
     _storage_id: Optional[str] = PrivateAttr(default=None)
-    _item_lineage_urn: Optional[str] = PrivateAttr(default=None)
 
     def work_item_arg_3lo(self, token_3lo: str) -> dict[str, Any]:
-     storage_id = create_storage(project_id=self.project_id, folder_urn=self.folder_id, file_name=self.file_name, token=token_3lo, region=self.region)
+     storage_id = create_storage(project_id=self.project_id, folder_urn=self.folder_id, file_name=self.file_name, token=token_3lo)
      self._storage_id = storage_id
      return {
             self.name: {
@@ -660,52 +649,19 @@ class ActivityOutputParameterAcc(ActivityOutputParameter):
                 "headers": {"Authorization": f"Bearer {token_3lo}"},
             }
         }
-
+    
     def create_acc_item(self, token: str):
         if not self._storage_id:
            raise RuntimeError("No storage have being creaded")
-
-        # Check if file already exists in the folder
-        item_id = find_item_by_name(
-            self.project_id,
-            self.folder_id,
-            self.file_name,
-            token,
-            region=self.region
+           
+        resp = create_item_with_first_version(
+            project_id=self.project_id,
+            folder_urn=self.folder_id,
+            file_name=self.file_name,
+            storage_id=self._storage_id,
+            token=token
         )
-
-        if item_id:
-            # File exists → create new version
-            # Store the lineage URN for later use
-            self._item_lineage_urn = item_id
-            resp = create_version_for_item(
-                project_id=self.project_id,
-                item_id=item_id,
-                file_name=self.file_name,
-                storage_id=self._storage_id,
-                token=token,
-                region=self.region
-            )
-        else:
-            # File doesn't exist → create new item with first version
-            resp = create_item_with_first_version(
-                project_id=self.project_id,
-                folder_urn=self.folder_id,
-                file_name=self.file_name,
-                storage_id=self._storage_id,
-                token=token,
-                region=self.region
-            )
-            # Store the lineage URN from response
-            self._item_lineage_urn = resp["data"]["id"]
-
         return resp
-
-    def get_lineage_urn(self) -> str:
-        """Get the item lineage URN for viewer."""
-        if not self._item_lineage_urn:
-            raise RuntimeError("Item lineage URN not available - call create_acc_item first")
-        return self._item_lineage_urn
 
 class WorkItemAcc(WorkItem):
 
@@ -736,112 +692,148 @@ class WorkItemAcc(WorkItem):
 
         return workitem_id
 
-    def execute_and_finalize(
-        self,
-        token_2lo: str,
-        token_3lo: str,
-        max_wait: int = 600,
-        interval: int = 10,
-        progress_callback = None,
-        region: str = "US"
-    ) -> dict[str, Any]:
-        """
-        Execute work item and automatically finalize ACC output items.
+====================================================================================================
+FILE: aps_automation_sdk/cli.py
+====================================================================================================
 
-        Args:
-            token_2lo: 2-legged OAuth token for Design Automation API
-            token_3lo: 3-legged OAuth token for ACC resource access
-            max_wait: Maximum wait time in seconds
-            interval: Polling interval in seconds
-            progress_callback: Optional callback function for progress updates (msg, percentage)
-            region: ACC region - "US" (default) or "EMEA"/"EU"
+import argparse
+import getpass
+import json
+import os
+from pathlib import Path
+from typing import Annotated, Any
 
-        Returns:
-            Dictionary with status and output parameter results including version URNs
-        """
-        def report_progress(message: str, percentage: float):
-            """Helper to report progress if callback is provided"""
-            if progress_callback:
-                progress_callback(message, percentage)
+from dotenv import load_dotenv
 
-        # Build arguments
-        report_progress("Building work item arguments...", 35)
-        args = self.build_arguments_3lo(token_3lo)
+from aps_automation_sdk.signing import export_public_key, generate_key_file, sign_activity
+from aps_automation_sdk.utils import (
+    get_forgeapp_profile,
+    get_token,
+    set_nickname,
+    upload_public_key,
+)
 
-        # Submit work item
-        report_progress("Submitting work item to Design Automation...", 40)
-        response = run_work_item(
-            token=token_2lo,
-            full_activity_alias=self.activity_full_alias,
-            work_item_args=args,
-            region=region
-        )
 
-        work_item_id = response.get("id")
-        if not work_item_id:
-            raise RuntimeError("No work item id returned")
+def resolve_client_credentials() -> Annotated[tuple[str, str], "Resolved APS client id and client secret"]:
+    client_id = os.getenv("CLIENT_ID", "").strip()
+    client_secret = os.getenv("CLIENT_SECRET", "").strip()
 
-        report_progress(f"Work item submitted: {work_item_id[:8]}...", 45)
+    if not client_id:
+        client_id = input("APS CLIENT_ID: ").strip()
+    if not client_secret:
+        client_secret = getpass.getpass("APS CLIENT_SECRET: ").strip()
 
-        # Poll for completion with progress updates
-        elapsed = 0
-        while elapsed < max_wait:
-            time.sleep(interval)
-            elapsed += interval
+    if not client_id or not client_secret:
+        raise ValueError("Missing CLIENT_ID or CLIENT_SECRET.")
 
-            # Get status
-            status_response = get_workitem_status(work_item_id, token_2lo, region=region)
-            status = status_response.get("status", "pending")
+    return client_id, client_secret
 
-            # Calculate progress (45% to 75% during execution)
-            execution_progress = 45 + min(30, (elapsed / max_wait) * 30)
-            report_progress(f"Design Automation running... ({status})", execution_progress)
 
-            # Check if complete (all terminal states)
-            if status in ["success", "failed", "failedInstructions", "failedUpload", "failedDownload", "cancelled"]:
-                if status != "success":
-                    # Get report URL for debugging
-                    report_url = status_response.get("reportUrl", "No report URL available")
+def resolve_token_from_credentials() -> Annotated[str, "2-legged OAuth access token"]:
+    client_id, client_secret = resolve_client_credentials()
+    return get_token(client_id=client_id, client_secret=client_secret)
 
-                    # Fetch the actual report content
-                    report_content = ""
-                    if report_url and report_url != "No report URL available":
-                        report_content = fetch_report_content(report_url)
 
-                    error_msg = (
-                        f"Work item failed with status: {status}\n"
-                        f"Report URL: {report_url}\n\n"
-                        f"=== REPORT CONTENT ===\n"
-                        f"{report_content}\n"
-                        f"======================\n"
-                    )
-                    raise RuntimeError(error_msg)
-                break
+def run_signing_generate(args: Annotated[argparse.Namespace, "Parsed CLI arguments"]) -> Annotated[int, "Process exit code"]:
+    generate_key_file(keyfile=args.keyfile, key_size=args.key_size)
+    print(f"Private key created at: {Path(args.keyfile).resolve()}")
+    return 0
 
-        report_progress("Design Automation completed!", 75)
 
-        # Automatically finalize ACC output parameters
-        report_progress("Creating ACC version...", 80)
-        output_results = {}
-        for param in self.parameters:
-            if isinstance(param, ActivityOutputParameterAcc):
-                acc_response = param.create_acc_item(token=token_3lo)
+def run_signing_export(args: Annotated[argparse.Namespace, "Parsed CLI arguments"]) -> Annotated[int, "Process exit code"]:
+    export_public_key(keyfile=args.keyfile, pubkeyfile=args.pubkeyfile)
+    print(f"Public key created at: {Path(args.pubkeyfile).resolve()}")
+    return 0
 
-                # Get the lineage URN - this is stored internally after create_acc_item
-                lineage_urn = param.get_lineage_urn()
 
-                output_results[param.name] = {
-                    "version_urn": lineage_urn,
-                    "response": acc_response
-                }
+def run_signing_sign(args: Annotated[argparse.Namespace, "Parsed CLI arguments"]) -> Annotated[int, "Process exit code"]:
+    signature = sign_activity(keyfile=args.keyfile, activity_id=args.activity_id)
+    print(signature)
+    return 0
 
-        report_progress("ACC version created successfully!", 85)
 
-        return {
-            "status": "success",
-            "work_item_id": work_item_id,
-            "outputs": output_results
-        }
+def run_public_key_info(args: Annotated[argparse.Namespace, "Parsed CLI arguments"]) -> Annotated[int, "Process exit code"]:
+    token = resolve_token_from_credentials()
+    profile = get_forgeapp_profile(token=token)
+    print(json.dumps(profile, indent=2))
+    return 0
+
+
+def load_public_key(
+    pubkeyfile: Annotated[str, "Path to public key JSON file"],
+) -> Annotated[dict[str, Any], "Parsed public key payload"]:
+    path = Path(pubkeyfile)
+    if not path.exists():
+        raise FileNotFoundError(f"Public key file not found: {pubkeyfile}")
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict) or not payload:
+        raise ValueError("Public key JSON must be a non-empty object")
+    return payload
+
+
+def run_public_key_upload(args: Annotated[argparse.Namespace, "Parsed CLI arguments"]) -> Annotated[int, "Process exit code"]:
+    token = resolve_token_from_credentials()
+    if args.nickname:
+        applied = set_nickname(token=token, nickname=args.nickname)
+        print(f"Using nickname: {applied}")
+
+    public_key = load_public_key(args.pubkeyfile)
+    response = upload_public_key(token=token, public_key=public_key)
+    print(json.dumps(response, indent=2))
+    return 0
+
+
+def build_parser() -> Annotated[argparse.ArgumentParser, "Configured CLI parser"]:
+    parser = argparse.ArgumentParser(prog="aps-automation", description="APS Automation SDK CLI")
+    subparsers = parser.add_subparsers(dest="command")
+
+    signing_parser = subparsers.add_parser("signing", help="Signing utilities")
+    signing_subparsers = signing_parser.add_subparsers(dest="signing_command")
+
+    generate_parser = signing_subparsers.add_parser("generate", help="Generate RSA private key JSON")
+    generate_parser.add_argument("--keyfile", required=True, help="Output private key JSON path")
+    generate_parser.add_argument("--key-size", type=int, default=2048, help="RSA key size")
+    generate_parser.set_defaults(func=run_signing_generate)
+
+    export_parser = signing_subparsers.add_parser("export", help="Export public key JSON from private key JSON")
+    export_parser.add_argument("--keyfile", required=True, help="Input private key JSON path")
+    export_parser.add_argument("--pubkeyfile", required=True, help="Output public key JSON path")
+    export_parser.set_defaults(func=run_signing_export)
+
+    sign_parser = signing_subparsers.add_parser("sign", help="Sign an activity id")
+    sign_parser.add_argument("--keyfile", required=True, help="Input private key JSON path")
+    sign_parser.add_argument("--activity-id", required=True, help="Activity id to sign")
+    sign_parser.set_defaults(func=run_signing_sign)
+
+    public_key_parser = subparsers.add_parser("public-key", help="forgeapps/me public key operations")
+    public_key_subparsers = public_key_parser.add_subparsers(dest="public_key_command")
+
+    info_parser = public_key_subparsers.add_parser("info", help="Get forgeapps/me profile")
+    info_parser.set_defaults(func=run_public_key_info)
+
+    upload_parser = public_key_subparsers.add_parser("upload", help="Upload public key to forgeapps/me")
+    upload_parser.add_argument("--pubkeyfile", required=True, help="Public key JSON path")
+    upload_parser.add_argument("--nickname", help="Optional nickname to set before upload")
+    upload_parser.set_defaults(func=run_public_key_upload)
+
+    return parser
+
+
+def cli() -> Annotated[int, "Process exit code"]:
+    load_dotenv(override=False)
+    parser = build_parser()
+    args = parser.parse_args()
+    if not hasattr(args, "func"):
+        parser.print_help()
+        return 1
+    try:
+        return args.func(args)
+    except Exception as exc:
+        parser.exit(status=2, message=f"Error: {exc}\n")
+
+
+if __name__ == "__main__":
+    raise SystemExit(cli())
 
 ====================================================================================================
 FILE: aps_automation_sdk/core.py
@@ -860,17 +852,9 @@ load_dotenv()
 APS_BASE_URL = "https://developer.api.autodesk.com"
 OSS_V2_BASE_URL = f"{APS_BASE_URL}/oss/v2"
 OSS_V4_BASE_URL = f"{APS_BASE_URL}/oss/v4"
-MD_BASE_URL = f"{APS_BASE_URL}/modelderivative/v2"
+MD_BASE_URL = f"{APS_BASE_URL}/modelderivative/v2" 
+DA_BASE_URL = f"{APS_BASE_URL}/da/us-east/v3" 
 AUTH_URL = f"{APS_BASE_URL}/authentication/v2/token"
-
-def get_da_base_url(region: str = "US") -> str:
-    """Get the Design Automation base URL for the specified region."""
-    if region.upper() in ["EMEA", "EU"]:
-        return f"{APS_BASE_URL}/da/eu-west/v3"
-    return f"{APS_BASE_URL}/da/us-east/v3"
-
-# Default to US for backwards compatibility
-DA_BASE_URL = get_da_base_url("US")
 
 def get_nickname(token: str) -> str:
     """
@@ -1034,18 +1018,17 @@ def create_activity(
     return r.json()
 
 
-def run_work_item(token: str, full_activity_alias: str, work_item_args: dict[str,Any], region: str = "US"):
-    da_url = get_da_base_url(region)
-    url = f"{da_url}/workitems"
+def run_work_item(token: str, full_activity_alias: str, work_item_args: dict[str,Any]):
+    url = f"{DA_BASE_URL}/workitems"
     payload = {
         "activityId": full_activity_alias,
-        "arguments": work_item_args
+        "arguments": work_item_args 
     }
     r = requests.post(url, headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"}, json=payload, timeout=30)
-
+    
     if r.status_code != 200:
         print(f" Error found: {r.text=}")
-
+    
     r.raise_for_status()
     return r.json()
 
@@ -1071,12 +1054,11 @@ def run_public_work_item(token: str, full_activity_alias: str, work_item_args: d
 
 
 
-def get_workitem_status(workitem_id: str, token: str, region: str = "US") -> dict[str, Any]:
+def get_workitem_status(workitem_id: str, token: str) -> dict[str, Any]:
     """
     Get the current status and report URL for a WorkItem.
     """
-    da_url = get_da_base_url(region)
-    url = f"{da_url}/workitems/{workitem_id}"
+    url = f"{DA_BASE_URL}/workitems/{workitem_id}"
     r = requests.get(
         url,
         headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
@@ -1099,31 +1081,15 @@ def poll_workitem_status(workitem_id: str, token: str, max_wait: int = 600, inte
         last_status = status_resp.get("status", "")
         report_url = status_resp.get('reportUrl')
         logging.info("[%3ds] status=%s report_url=%s", elapsed, last_status, report_url)
-
-        # Check for all terminal states (success or any failure type)
-        if last_status in {"success", "failed", "failedInstructions", "failedUpload", "failedDownload", "cancelled"}:
+        if last_status in {"success", "failedUpload", "cancelled"}:
             report = status_resp.get("reportUrl")
             if report:
                 logging.info("Report URL: %s", report)
             break
-
         time.sleep(interval)
         elapsed += interval
-
+    
     return status_resp
-
-
-def fetch_report_content(report_url: str) -> str:
-    """
-    Fetch the report content from the report URL.
-    Returns the text content of the report, or an error message if it fails.
-    """
-    try:
-        r = requests.get(report_url, timeout=30)
-        r.raise_for_status()
-        return r.text
-    except Exception as e:
-        return f"Failed to fetch report: {str(e)}"
 
 ====================================================================================================
 FILE: aps_automation_sdk/dsl.py
@@ -1444,20 +1410,176 @@ def get_translation_info(token: str, object_urn: str) -> dict[str, Any]:
     return info
 
 ====================================================================================================
+FILE: aps_automation_sdk/signing.py
+====================================================================================================
+
+import base64
+import json
+from functools import lru_cache
+from importlib import import_module
+from pathlib import Path
+from types import ModuleType
+from typing import Annotated, Any
+
+
+@lru_cache(maxsize=1)
+def require_cryptography_modules() -> Annotated[tuple[ModuleType, ModuleType, ModuleType], "Loaded cryptography modules: hashes, padding, rsa"]:
+    """
+    Load cryptography modules lazily so the SDK can be imported without the signing extra.
+    """
+    try:
+        hashes = import_module("cryptography.hazmat.primitives.hashes")
+        padding = import_module("cryptography.hazmat.primitives.asymmetric.padding")
+        rsa = import_module("cryptography.hazmat.primitives.asymmetric.rsa")
+    except ImportError as exc:
+        raise RuntimeError(
+            "Signing features require cryptography. Install with: uv add \"aps-automation-sdk[signing]\" (or pip install \"aps-automation-sdk[signing]\")."
+        ) from exc
+    return hashes, padding, rsa
+
+
+def base64_encode(
+    data: Annotated[bytes, "Raw bytes to encode as base64 text"],
+) -> Annotated[str, "ASCII base64 encoded string"]:
+    return base64.b64encode(data).decode("ascii")
+
+
+def base64_decode(
+    text: Annotated[str, "ASCII base64 encoded string"],
+) -> Annotated[bytes, "Decoded raw bytes"]:
+    return base64.b64decode(text)
+
+
+def int_to_bytes(
+    value: Annotated[int, "Positive integer to convert to big-endian bytes"],
+) -> Annotated[bytes, "Big-endian bytes"]:
+    byte_length = (value.bit_length() + 7) // 8
+    return value.to_bytes(byte_length, byteorder="big")
+
+
+def bytes_to_int(
+    data: Annotated[bytes, "Big-endian bytes to convert into integer"],
+) -> Annotated[int, "Converted integer value"]:
+    return int.from_bytes(data, byteorder="big")
+
+
+def generate_key_file(
+    keyfile: Annotated[str, "Path to write private key JSON file"],
+    key_size: Annotated[int, "RSA key size in bits (recommended 2048)"] = 2048,
+) -> Annotated[str, "Absolute path where the private key JSON file was saved"]:
+    """
+    Generate an RSA private key file in Autodesk signer-compatible JSON format.
+    """
+    _, _, rsa = require_cryptography_modules()
+    private_key = rsa.generate_private_key(public_exponent=65537, key_size=key_size)
+    private_numbers = private_key.private_numbers()
+    public_numbers = private_numbers.public_numbers
+
+    key_data = {
+        "D": base64_encode(int_to_bytes(private_numbers.d)),
+        "DP": base64_encode(int_to_bytes(private_numbers.dmp1)),
+        "DQ": base64_encode(int_to_bytes(private_numbers.dmq1)),
+        "Exponent": base64_encode(int_to_bytes(public_numbers.e)),
+        "InverseQ": base64_encode(int_to_bytes(private_numbers.iqmp)),
+        "Modulus": base64_encode(int_to_bytes(public_numbers.n)),
+        "P": base64_encode(int_to_bytes(private_numbers.p)),
+        "Q": base64_encode(int_to_bytes(private_numbers.q)),
+    }
+
+    output_path = Path(keyfile)
+    output_path.write_text(json.dumps(key_data, indent=2), encoding="utf-8")
+    return str(output_path.resolve())
+
+
+def export_public_key(
+    keyfile: Annotated[str, "Path to existing private key JSON file"],
+    pubkeyfile: Annotated[str, "Path to write exported public key JSON file"],
+) -> None:
+    """
+    Export only the public key fields from a private key JSON.
+    """
+    key_path = Path(keyfile)
+    if not key_path.exists():
+        raise FileNotFoundError(f"Key file not found: {keyfile}")
+
+    key_data = json.loads(key_path.read_text(encoding="utf-8"))
+    public_key_data = {
+        "Exponent": key_data["Exponent"],
+        "Modulus": key_data["Modulus"],
+    }
+
+    output_path = Path(pubkeyfile)
+    output_path.write_text(json.dumps(public_key_data, indent=2), encoding="utf-8")
+
+
+def load_private_key_data(
+    keyfile: Annotated[str, "Path to private key JSON file"],
+) -> Annotated[dict[str, Any], "Parsed private key payload"]:
+    key_path = Path(keyfile)
+    if not key_path.exists():
+        raise FileNotFoundError(f"Key file not found: {keyfile}")
+    key_data = json.loads(key_path.read_text(encoding="utf-8"))
+    required = ["D", "Exponent", "InverseQ", "Modulus", "P", "Q"]
+    missing = [field for field in required if field not in key_data]
+    if missing:
+        raise ValueError(f"Invalid key file. Missing fields: {', '.join(missing)}")
+    return key_data
+
+
+def sign_activity(
+    keyfile: Annotated[str, "Path to private key JSON file used for signing"],
+    activity_id: Annotated[str, "Full activity id in format nickname.Activity+alias"],
+) -> Annotated[str, "Base64 RSA-SHA256 signature for the activity id"]:
+    """
+    Sign an activity ID with RSA-SHA256 PKCS#1 v1.5 and return base64 signature.
+    """
+    hashes, padding, rsa = require_cryptography_modules()
+    key_data = load_private_key_data(keyfile)
+
+    d = bytes_to_int(base64_decode(key_data["D"]))
+    p = bytes_to_int(base64_decode(key_data["P"]))
+    q = bytes_to_int(base64_decode(key_data["Q"]))
+    e = bytes_to_int(base64_decode(key_data["Exponent"]))
+    n = bytes_to_int(base64_decode(key_data["Modulus"]))
+    iqmp = bytes_to_int(base64_decode(key_data["InverseQ"]))
+
+    dmp1 = bytes_to_int(base64_decode(key_data["DP"])) if "DP" in key_data else d % (p - 1)
+    dmq1 = bytes_to_int(base64_decode(key_data["DQ"])) if "DQ" in key_data else d % (q - 1)
+
+    private_numbers = rsa.RSAPrivateNumbers(
+        p=p,
+        q=q,
+        d=d,
+        dmp1=dmp1,
+        dmq1=dmq1,
+        iqmp=iqmp,
+        public_numbers=rsa.RSAPublicNumbers(e=e, n=n),
+    )
+    private_key = private_numbers.private_key()
+
+    message = activity_id.encode("utf-16-le")
+    signature = private_key.sign(message, padding.PKCS1v15(), hashes.SHA256())
+    return base64_encode(signature)
+
+====================================================================================================
 FILE: aps_automation_sdk/utils.py
 ====================================================================================================
 
+from typing import Annotated, Any, Literal
+
 import requests
-from typing import Annotated, Literal, Any
+
 from aps_automation_sdk.core import upload_appbundle
 from aps_automation_sdk.dsl import RegisterBundleResponse
 
 APS_BASE_URL = "https://developer.api.autodesk.com"
 OSS_V2_BASE_URL = f"{APS_BASE_URL}/oss/v2"
-DA_BASE_URL = f"{APS_BASE_URL}/da/us-east/v3" 
+DA_BASE_URL = f"{APS_BASE_URL}/da/us-east/v3"
 AUTH_URL = f"{APS_BASE_URL}/authentication/v2/token"
+FORGEAPPS_ME_URL = f"{DA_BASE_URL}/forgeapps/me"
 
 SCOPES = "data:read data:write data:create bucket:create bucket:read code:all"
+
 
 def get_token(client_id: str, client_secret: str) -> str:
     response = requests.post(
@@ -1471,53 +1593,70 @@ def get_token(client_id: str, client_secret: str) -> str:
         timeout=15,
     )
     response.raise_for_status()
-    token = response.json()["access_token"]
-    return token
+    return response.json()["access_token"]
+
+
+def get_forgeapp_profile(token: str) -> dict[str, Any]:
+    r = requests.get(
+        FORGEAPPS_ME_URL,
+        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+        timeout=30,
+    )
+    r.raise_for_status()
+    return r.json()
+
+
+def upload_public_key(token: str, public_key: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(public_key, dict) or not public_key:
+        raise ValueError("public_key must be a non-empty dictionary")
+    r = requests.patch(
+        FORGEAPPS_ME_URL,
+        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+        json={"publicKey": public_key},
+        timeout=30,
+    )
+    r.raise_for_status()
+    return r.json()
+
 
 def set_nickname(token: str, nickname: str) -> str:
     """
     Try to set the nickname.
     Returns the nickname that actually applies.
     """
-    url = f"{DA_BASE_URL}/forgeapps/me"
     r = requests.patch(
-        url,
+        FORGEAPPS_ME_URL,
         headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
         json={"nickname": nickname},
         timeout=30,
     )
 
     if r.status_code == 200:
-        return nickname
-
-    if r.status_code == 409:
-        # App already has resources, nickname is locked, keep the current one
         return get_nickname(token)
 
-    # Often 400 means the nickname is already taken
+    if r.status_code == 409:
+        # App already has resources, nickname is locked, keep the current one.
+        return get_nickname(token)
+
     try:
-        details = r.json()
+        details: Any = r.json()
     except Exception:
         details = r.text
     raise RuntimeError(f"Could not set nickname, status {r.status_code}, details {details}")
 
+
 def get_nickname(token: str) -> str:
-    url = f"{DA_BASE_URL}/forgeapps/me"
-    r = requests.get(
-        url,
-        headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
-        timeout=30,
-    )
-    r.raise_for_status()
-    # The API returns a JSON object with nickname and publicKey
-    # Example response: {"nickname": "viktortest", "publicKey": {...}}
-    response_data = r.json()
-    return response_data.get("nickname", response_data)
+    profile = get_forgeapp_profile(token)
+    nickname = profile.get("nickname")
+    if not isinstance(nickname, str) or not nickname:
+        raise RuntimeError(f"Unexpected forgeapps/me profile response: {profile}")
+    return nickname
+
 
 def create_bucket(
     bucketKey: Annotated[str, "Unique Name you assign to a bucket, Possible values: -_.a-z0-9 (between 3-128 characters in length"],
     token: Annotated[str, "2Lo token"],
-    policy_key: Literal["transient", "temporary", "persistent"]= "transient",
+    policy_key: Literal["transient", "temporary", "persistent"] = "transient",
     access: None | Literal["full", "read"] = "full",
     region: Literal["US", "EMEA", "AUS", "CAN", "DEU", "IND", "JPN", "GBN"] = "US",
 ) -> dict[str, Any]:
@@ -1528,7 +1667,7 @@ def create_bucket(
     url = f"{OSS_V2_BASE_URL}/buckets"
     payload = {"bucketKey": bucketKey, "access": access, "policyKey": policy_key}
     headers = {
-        "Authorization":f"Bearer {token}",
+        "Authorization": f"Bearer {token}",
         "Content-Type": "application/json",
         "x-ads-region": region,
     }
@@ -1536,21 +1675,23 @@ def create_bucket(
     r.raise_for_status()
     return r.json()
 
-def delete_appbundle(appbundleId:str, token: str) -> int:
+
+def delete_appbundle(appbundleId: str, token: str) -> int:
     url = f"{DA_BASE_URL}/appbundles/{appbundleId}"
     header = {"Authorization": f"Bearer {token}"}
-    r = requests.delete(url=url, headers=header)
-    r.raise_for_status() 
+    r = requests.delete(url=url, headers=header, timeout=30)
+    r.raise_for_status()
     return r.status_code
+
 
 def delete_activity(activityId: str, token: str) -> int:
     url = f"{DA_BASE_URL}/activities/{activityId}"
     header = {"Authorization": f"Bearer {token}"}
-    r = requests.delete(url=url, headers=header)
+    r = requests.delete(url=url, headers=header, timeout=30)
     r.raise_for_status()
     return r.status_code
 
-# App bundle utils
+
 def create_appbundle_version(app_id: str, engine: str, description: str, token: str) -> RegisterBundleResponse:
     """
     POST /appbundles/{id}/versions
@@ -1558,7 +1699,12 @@ def create_appbundle_version(app_id: str, engine: str, description: str, token: 
     """
     url = f"{DA_BASE_URL}/appbundles/{app_id}/versions"
     payload = {"id": None, "engine": engine, "description": description}
-    r = requests.post(url, headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"}, json=payload, timeout=60)
+    r = requests.post(
+        url,
+        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+        json=payload,
+        timeout=60,
+    )
     r.raise_for_status()
     return RegisterBundleResponse.model_validate(r.json())
 
@@ -1568,14 +1714,32 @@ def move_or_create_alias(app_id: str, alias_id: str, version: int, token: str) -
     PATCH alias to the new version. If the alias does not exist, create it.
     """
     url = f"{DA_BASE_URL}/appbundles/{app_id}/aliases/{alias_id}"
-    r = requests.patch(url, headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"}, json={"version": version}, timeout=30)
+    r = requests.patch(
+        url,
+        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+        json={"version": version},
+        timeout=30,
+    )
     if r.status_code == 404:
         create_url = f"{DA_BASE_URL}/appbundles/{app_id}/aliases"
-        r = requests.post(create_url, headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"}, json={"id": alias_id, "version": version}, timeout=30)
+        r = requests.post(
+            create_url,
+            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+            json={"id": alias_id, "version": version},
+            timeout=30,
+        )
     r.raise_for_status()
     return r.json()
 
-def publish_appbundle_update(appbundle_id: str, engine: str, alias_id: str, zip_path: str, token: str, description: str = "Automated update") -> dict[str, Any]:
+
+def publish_appbundle_update(
+    appbundle_id: str,
+    engine: str,
+    alias_id: str,
+    zip_path: str,
+    token: str,
+    description: str = "Automated update",
+) -> dict[str, Any]:
     """
     Update the running Activity without breaking users:
     1) Create a new AppBundle version
@@ -1591,14 +1755,9 @@ def publish_appbundle_update(appbundle_id: str, engine: str, alias_id: str, zip_
             "s3_status": <int>
         }
     """
-    # Step 1: create new version and get S3 upload info
     version_resp: RegisterBundleResponse = create_appbundle_version(appbundle_id, engine, description, token)
     version_no = version_resp.version
-
-    # Step 2: upload the bundle
-    s3_status = upload_appbundle(upload_parameters=version_resp.uploadParameters,zip_path=zip_path)
-
-    # Step 3: move alias to the new version
+    s3_status = upload_appbundle(upload_parameters=version_resp.uploadParameters, zip_path=zip_path)
     alias_resp = move_or_create_alias(appbundle_id, alias_id, version_no, token)
 
     return {
