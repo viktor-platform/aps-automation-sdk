@@ -1,0 +1,4 @@
+interface:
+  display_name: "APS ACC Public Activity Signing"
+  short_description: "Sign APS ACC public activities"
+  default_prompt: "Use $aps-acc-public-activity-signing to generate keys, upload a public key, and sign a Design Automation activity."
