@@ -61,7 +61,8 @@ This repository provides agent context files for developers:
 
 This repository also publishes the following skills:
 
-- `skills/aps-acc-public-activity-signing/`
+- `.agents/skills/aps-acc-public-activity-signing/`
+- `.agents/skills/full-llm-export/`
 
 Use this skill to run APS public activity signing workflows end-to-end:
 - generate RSA keys
@@ -92,7 +93,7 @@ npx skills add https://github.com/viktor-platform/aps-automation-sdk \
   --skill aps-acc-public-activity-signing \
   --copy \
   -a claude-code \
-  -yy
+  -y
 ```
 
 This copies the skill into: `.claude/skills`

@@ -44,7 +44,7 @@ Before generating any keys, **always ask the user**:
 ## Standard Preflight
 Run this first to confirm credentials can mint a token:
 ```bash
-python skills/aps-acc-public-activity-signing/scripts/check_env_and_get_token.py
+python .agents/skills/aps-acc-public-activity-signing/scripts/check_env_and_get_token.py
 ```
 
 ## Installation
