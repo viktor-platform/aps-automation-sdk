@@ -48,6 +48,14 @@ from .signing import (
     export_public_key,
     sign_activity,
 )
+from .ssa import (
+    DEFAULT_SSA_SCOPES,
+    SsaConfig,
+    build_ssa_jwt,
+    exchange_jwt_assertion_for_token,
+    get_ssa_3lo_token,
+    parse_token_response,
+)
 
 __all__ = [
     "Activity",
@@ -77,6 +85,12 @@ __all__ = [
     "generate_key_file",
     "export_public_key",
     "sign_activity",
+    "DEFAULT_SSA_SCOPES",
+    "SsaConfig",
+    "build_ssa_jwt",
+    "parse_token_response",
+    "exchange_jwt_assertion_for_token",
+    "get_ssa_3lo_token",
     "safe_base64_encode",
     "to_md_urn",
     "get_revit_version_from_manifest",

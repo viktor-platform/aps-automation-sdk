@@ -19,6 +19,9 @@ examples = [
 signing = [
     "cryptography>=44.0.0",
 ]
+ssa = [
+    "pyjwt[crypto]>=2.10.1",
+]
 
 [project.scripts]
 aps-automation = "aps_automation_sdk.cli:cli"
@@ -28,6 +31,14 @@ packages = ["aps_automation_sdk"]
 
 [tool.uv]
 package = true
+
+[dependency-groups]
+dev = [
+    "cryptography>=44.0.0",
+    "ipykernel>=7.1.0",
+    "pyjwt[crypto]>=2.10.1",
+    "pytest>=8.4.0",
+]
 
 [project.urls]
 repository = "https://github.com/viktor-platform/aps-automation-sdk"
