@@ -1,0 +1,77 @@
+name: Integration Tests (main)
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: integration-main-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  integration:
+    name: Run APS integration tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      APS_SSA_CLIENT_ID: ${{ secrets.APS_SSA_CLIENT_ID }}
+      APS_SSA_CLIENT_SECRET: ${{ secrets.APS_SSA_CLIENT_SECRET }}
+      APS_SSA_SERVICE_ACCOUNT_ID: ${{ secrets.APS_SSA_SERVICE_ACCOUNT_ID }}
+      APS_SSA_KEY_ID: ${{ secrets.APS_SSA_KEY_ID }}
+      APS_SSA_PRIVATE_KEY: ${{ secrets.APS_SSA_PRIVATE_KEY }}
+      APS_SSA_SCOPE: ${{ secrets.APS_SSA_SCOPE }}
+      APS_TEST_PROJECT_ID: ${{ secrets.APS_TEST_PROJECT_ID }}
+      APS_TEST_FOLDER_ID: ${{ secrets.APS_TEST_FOLDER_ID }}
+      APS_TEST_SOURCE_ITEM_URN: ${{ secrets.APS_TEST_SOURCE_ITEM_URN }}
+      APS_TEST_KEEP_DA_RESOURCES: "false"
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Validate required secrets
+        run: |
+          missing=()
+          required=(
+            APS_SSA_CLIENT_ID
+            APS_SSA_CLIENT_SECRET
+            APS_SSA_SERVICE_ACCOUNT_ID
+            APS_SSA_KEY_ID
+            APS_SSA_PRIVATE_KEY
+            APS_SSA_SCOPE
+            APS_TEST_PROJECT_ID
+            APS_TEST_FOLDER_ID
+            APS_TEST_SOURCE_ITEM_URN
+          )
+
+          for var in "${required[@]}"; do
+            if [ -z "${!var}" ]; then
+              missing+=("$var")
+            fi
+          done
+
+          if [ "${#missing[@]}" -gt 0 ]; then
+            echo "Missing required GitHub secrets/environment variables:"
+            printf ' - %s\n' "${missing[@]}"
+            exit 1
+          fi
+
+      - name: Install dependencies
+        run: uv sync --locked --group dev
+
+      - name: Run integration tests
+        run: uv run --group dev pytest -m integration -vv --maxfail=1
