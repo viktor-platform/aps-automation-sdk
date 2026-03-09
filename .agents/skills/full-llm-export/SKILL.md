@@ -15,12 +15,12 @@ Generate `llms-full.txt` from repository source files with deterministic include
 
 ### Default command
 ```bash
-python skills/full-llm-export/scripts/export_repo_context.py
+python .agents/skills/full-llm-export/scripts/export_repo_context.py
 ```
 
 ### Custom root/output
 ```bash
-python skills/full-llm-export/scripts/export_repo_context.py \
+python .agents/skills/full-llm-export/scripts/export_repo_context.py \
   --root /path/to/repo \
   --output llms-full.txt
 ```

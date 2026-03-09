@@ -212,7 +212,7 @@ CLI and skill available:
   - `aps-automation signing sign --keyfile ... --activity-id ...`
   - `aps-automation public-key info`
   - `aps-automation public-key upload --pubkeyfile ... [--nickname ...]`
-- Skill: `skills/aps-acc-public-activity-signing/SKILL.md`
+- Skill: `.agents/skills/aps-acc-public-activity-signing/SKILL.md`
 - Notebook example: `examples/Common/05_workitem_signing.ipynb`
 
 ---

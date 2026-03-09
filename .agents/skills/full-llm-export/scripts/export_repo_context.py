@@ -26,7 +26,7 @@ EXCLUDE_FILES = {
 }
 
 EXCLUDE_RELATIVE_PATHS = {
-    "skills/full-llm-export/scripts/export_repo_context.py",
+    ".agents/skills/full-llm-export/scripts/export_repo_context.py",
 }
 
 MAX_FILE_SIZE = 200_000  # bytes
