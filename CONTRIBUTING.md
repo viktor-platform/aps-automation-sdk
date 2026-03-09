@@ -41,6 +41,33 @@ CLIENT_SECRET=your_client_secret_here
 
 Get your credentials from the [APS Developer Portal](https://aps.autodesk.com/).
 
+For development and integration test variables you can also use `.env.sample.dev` as a template.
+
+## Test
+
+We use two live tests for the SSA and ACC flow.
+
+`tests/integration/test_ssa_connection.py` checks that the SDK can mint an SSA based 3lo token and read ACC tip storage from a source item.
+
+`tests/integration/test_ssa_only_autocad_list_layers_e2e.py` runs the full end to end flow with signing. It sets nickname, uploads public key, deploys appbundle and activity, runs a public workitem, waits for success, and finalizes the output in ACC.
+
+Use these environment variables.
+
+`APS_SSA_CLIENT_ID`
+`APS_SSA_CLIENT_SECRET`
+`APS_SSA_SERVICE_ACCOUNT_ID`
+`APS_SSA_KEY_ID`
+`APS_SSA_PRIVATE_KEY`
+`APS_SSA_SCOPE`
+`APS_TEST_PROJECT_ID`
+`APS_TEST_SOURCE_ITEM_URN`
+
+The end to end test also needs `APS_TEST_FOLDER_ID`.
+
+For SSA setup and 3lo token generation read [SSA + ACC Hub Setup](docs/ssa-acc-hub-setup.md).
+
+End to end test reference [tests/integration/test_ssa_only_autocad_list_layers_e2e.py](tests/integration/test_ssa_only_autocad_list_layers_e2e.py).
+
 ## AI-Assisted Development
 
 You can use AI agents to speed up development, but they must always use repository context and APS documentation context.
