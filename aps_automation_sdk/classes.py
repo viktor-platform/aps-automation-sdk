@@ -358,6 +358,7 @@ class ActivityOutputParameterAcc(ActivityOutputParameter):
     project_id: str
     file_name: str
     _storage_id: Optional[str] = PrivateAttr(default=None)
+    _item_lineage_urn: Optional[str] = PrivateAttr(default=None)
 
     def work_item_arg_3lo(self, token_3lo: str) -> dict[str, Any]:
      storage_id = create_storage(project_id=self.project_id, folder_urn=self.folder_id, file_name=self.file_name, token=token_3lo)
@@ -381,7 +382,35 @@ class ActivityOutputParameterAcc(ActivityOutputParameter):
             storage_id=self._storage_id,
             token=token
         )
+        self._item_lineage_urn = resp["data"]["id"]
         return resp
+
+    def get_lineage_urn(self) -> str:
+        if not self._item_lineage_urn:
+            raise RuntimeError("No ACC item lineage urn available")
+        return self._item_lineage_urn
+
+    def resolve_storage_id(self, token: str) -> str:
+        if self._storage_id:
+            return self._storage_id
+
+        if not self._item_lineage_urn:
+            raise RuntimeError("No ACC storage or lineage urn available for download")
+
+        tip_payload = get_item_tip_version(
+            project_id=self.project_id,
+            item_lineage_urn=self._item_lineage_urn,
+            token=token,
+        )
+        self._storage_id = find_tip_storage_id(tip_payload)
+        return self._storage_id
+
+    def download_to(self, output_path: str, token: str) -> None:
+        storage_id = self.resolve_storage_id(token)
+        bucket_key, object_key = storage_id.split("urn:adsk.objects:os.object:")[1].split("/", 1)
+        self.bucketKey = bucket_key
+        self.objectKey = object_key
+        super().download_to(output_path, token)
 
 class WorkItemAcc(WorkItem):
 

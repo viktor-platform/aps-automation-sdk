@@ -218,6 +218,13 @@ def test_ssa_only_autocad_list_layers_end_to_end(tmp_path: Path) -> None:
         created_item = output_acc.create_acc_item(token3lo)
         assert created_item["data"]["type"] == "items"
         print(f"created ACC item lineage: {created_item['data']['id']}", flush=True)
+        assert output_acc.get_lineage_urn() == created_item["data"]["id"]
+
+        downloaded_output = tmp_path / output_name
+        print(f"Downloading ACC output to {downloaded_output}", flush=True)
+        output_acc.download_to(str(downloaded_output), token3lo)
+        assert downloaded_output.exists()
+        assert downloaded_output.read_text(encoding="utf-8").strip()
 
         print("E2E flow completed successfully", flush=True)
 
