@@ -109,15 +109,31 @@ def to_data_url_json(obj: dict) -> str:
 def find_item_by_name(
     project_id: str, folder_urn: str, file_name: str, token: str
 ) -> str | None:
-    url = f"{DATA_V1}/projects/{project_id}/folders/{folder_urn}/contents"
-    r = requests.get(url, headers=bearer(token), timeout=30)
-    r.raise_for_status()
-    for entry in r.json().get("data", []):
-        if (
-            entry.get("type") == "items"
-            and entry.get("attributes", {}).get("displayName") == file_name
-        ):
-            return entry.get("id")
+    """Find an item by display name across all folder pages."""
+    folder_path = urllib.parse.quote(folder_urn, safe="")
+    url = f"{DATA_V1}/projects/{project_id}/folders/{folder_path}/contents"
+    expected_origin = urllib.parse.urlsplit(DATA_V1)[:2]
+    visited: set[str] = set()
+    while url:
+        if url in visited:
+            raise RuntimeError("ACC folder pagination repeated a page")
+        visited.add(url)
+        r = requests.get(url, headers=bearer(token), timeout=30)
+        r.raise_for_status()
+        payload = r.json()
+        for entry in payload.get("data", []):
+            if (
+                entry.get("type") == "items"
+                and entry.get("attributes", {}).get("displayName") == file_name
+            ):
+                return entry.get("id")
+        next_link = payload.get("links", {}).get("next")
+        href = next_link.get("href") if isinstance(next_link, dict) else next_link
+        if not href:
+            break
+        url = urllib.parse.urljoin(url, href)
+        if urllib.parse.urlsplit(url)[:2] != expected_origin:
+            raise RuntimeError("ACC pagination link must use the APS API origin")
     return None
 
 
@@ -163,6 +179,9 @@ def create_item_with_first_version(
     """
     POST /data/v1/projects/{project_id}/items to create a new Item and first Version
     referencing the storage we prepared and Automation wrote to.
+
+    ``version`` is the temporary ID in this compound request. It does not set
+    the version number assigned by ACC. The tip and included IDs must match.
     """
     url = f"{DATA_V1}/projects/{project_id}/items"
     payload = {
@@ -181,7 +200,7 @@ def create_item_with_first_version(
         "included": [
             {
                 "type": "versions",
-                "id": "1",
+                "id": str(version),
                 "attributes": {
                     "name": file_name,
                     "extension": {

@@ -364,28 +364,58 @@ class ActivityOutputParameterAcc(ActivityOutputParameter):
     _item_lineage_urn: Optional[str] = PrivateAttr(default=None)
 
     def work_item_arg_3lo(self, token_3lo: str) -> dict[str, Any]:
-     storage_id = create_storage(project_id=self.project_id, folder_urn=self.folder_id, file_name=self.file_name, token=token_3lo)
-     self._storage_id = storage_id
-     return {
+        storage_id = create_storage(
+            project_id=self.project_id, folder_urn=self.folder_id,
+            file_name=self.file_name, token=token_3lo,
+        )
+        self._storage_id = storage_id
+        self._item_lineage_urn = None
+        return {
             self.name: {
-                "url": self._storage_id,
+                "url": storage_id,
                 "verb": self.verb,
                 "headers": {"Authorization": f"Bearer {token_3lo}"},
             }
         }
-    
-    def create_acc_item(self, token: str):
+
+    def create_acc_item(self, token: str) -> dict[str, Any]:
+        """Finalize a successful output as a new item or an existing item version.
+
+        Return the item response for a new file, or the version response for an
+        existing file. Call ``get_lineage_urn`` for the item ID in either case.
+        """
         if not self._storage_id:
-           raise RuntimeError("No storage have being creaded")
-           
-        resp = create_item_with_first_version(
+            raise RuntimeError("Create output storage before finalizing the ACC item")
+
+        item_id = find_item_by_name(self.project_id, self.folder_id, self.file_name, token)
+        if not item_id:
+            try:
+                resp = create_item_with_first_version(
+                    project_id=self.project_id,
+                    folder_urn=self.folder_id,
+                    file_name=self.file_name,
+                    storage_id=self._storage_id,
+                    token=token,
+                )
+            except HTTPError as exc:
+                if exc.response is None or exc.response.status_code != 409:
+                    raise
+                # Another writer can create this file after the first lookup.
+                item_id = find_item_by_name(self.project_id, self.folder_id, self.file_name, token)
+                if not item_id:
+                    raise
+            else:
+                self._item_lineage_urn = resp["data"]["id"]
+                return resp
+
+        resp = create_version_for_item(
             project_id=self.project_id,
-            folder_urn=self.folder_id,
+            item_id=item_id,
             file_name=self.file_name,
             storage_id=self._storage_id,
-            token=token
+            token=token,
         )
-        self._item_lineage_urn = resp["data"]["id"]
+        self._item_lineage_urn = item_id
         return resp
 
     def get_lineage_urn(self) -> str:
