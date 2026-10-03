@@ -46,9 +46,9 @@ APS_TEST_FOLDER_ID=
 APS_TEST_SOURCE_VERSION_URN=
 APS_TEST_SOURCE_ITEM_URN=
 
-APS_TEST_PUBLIC_ACTIVITY_ALIAS=
-APS_TEST_PUBLIC_ACTIVITY_SIGNATURE=
-APS_TEST_WORKITEM_CONFIG_JSON=
+# Private DA signing key JSON. This is separate from the SSA JWT key.
+APS_TEST_SIGNING_KEY_JSON='{"D":"...","Exponent":"...","InverseQ":"...","Modulus":"...","P":"...","Q":"..."}'
+APS_TEST_KEEP_DA_RESOURCES=false
 ```
 
 Notes:
@@ -76,17 +76,26 @@ Mint a 3LO token from SSA env vars:
 aps-automation ssa token
 ```
 
-If token minting works, run integration tests:
+The CLI prints a bearer token. Keep the output private.
+If token minting works, run the connection test:
 
 ```bash
-pytest -m integration
+uv run pytest -m "integration and not e2e" --tb=short
 ```
 
-Run e2e workitem test only when activity alias/signature are configured:
+Before the full AutoCAD test, set the app nickname and public signing key once.
+Set `APS_TEST_SIGNING_KEY_JSON` to the matching private key JSON.
+The test checks the key. It does not replace the app nickname or public key.
+Use a dedicated test project. The test creates an ACC output item.
 
 ```bash
-pytest -m e2e
+uv run pytest -m e2e --tb=short
 ```
+
+Local tests read the repository `.env` file. CI uses GitHub secrets.
+Live checks require a manual workflow run. They do not run on PRs.
+The current SSA test account cannot read the configured ACC source item.
+A valid SSA token does not confirm ACC access.
 
 ## 6) Troubleshooting matrix
 

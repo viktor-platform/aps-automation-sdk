@@ -7,6 +7,10 @@ on:
       - 'feat/**'
   workflow_dispatch:
     inputs:
+      run_ssa:
+        description: Check the SSA and ACC connection
+        type: boolean
+        default: false
       run_e2e:
         description: Run the full AutoCAD test
         type: boolean
@@ -37,7 +41,7 @@ jobs:
   integration:
     name: Run APS integration tests
     needs: unit
-    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
+    if: github.event_name == 'workflow_dispatch' && (inputs.run_ssa || inputs.run_e2e)
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
@@ -63,7 +67,6 @@ jobs:
       - name: Check live test configuration
         id: config
         env:
-          MANUAL_RUN: ${{ github.event_name == 'workflow_dispatch' }}
           RUN_E2E: ${{ inputs.run_e2e || false }}
         run: |
           required=(APS_SSA_CLIENT_ID APS_SSA_CLIENT_SECRET APS_SSA_SERVICE_ACCOUNT_ID
@@ -80,10 +83,7 @@ jobs:
           if [ "${#missing[@]}" -gt 0 ]; then
             echo 'configured=false' >> "$GITHUB_OUTPUT"
             printf 'Missing secret: %s\n' "${missing[@]}" >> "$GITHUB_STEP_SUMMARY"
-            if [ "$MANUAL_RUN" = "true" ]; then
-              exit 1
-            fi
-            echo '::notice::Live tests skipped. See the job summary for missing secret names.'
+            exit 1
           else
             echo 'configured=true' >> "$GITHUB_OUTPUT"
           fi

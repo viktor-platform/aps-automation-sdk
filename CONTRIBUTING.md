@@ -74,8 +74,9 @@ Use these variables for the connection test:
 For SSA setup, read [SSA + ACC Hub Setup](docs/ssa-acc-hub-setup.md).
 
 CI uses GitHub secrets. It does not load a local `.env` file. Unit tests run on all PRs.
-The connection test runs on PRs from this repository when the required secrets exist.
-If secrets are absent, the workflow reports the missing names and skips the live check.
+Live ACC tests do not run on PRs. ACC access is not available to the current SSA test account.
+For a manual connection check, select **Run workflow** and enable **Check the SSA and ACC connection**.
+A manual run reports missing secret names and fails if required secrets are absent.
 
 The full AutoCAD test creates an appbundle, an activity, a workitem, and an ACC output item.
 It reads the app nickname and checks its public key. It does not replace either value.
