@@ -1,4 +1,3 @@
-import json
 import os
 import time
 import uuid
@@ -6,7 +5,6 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from dotenv import load_dotenv
 
 from aps_automation_sdk import (
     Activity,
@@ -18,27 +16,15 @@ from aps_automation_sdk import (
     WorkItemAcc,
     delete_activity,
     delete_appbundle,
-    export_public_key,
     get_forgeapp_profile,
-    generate_key_file,
     get_token,
-    set_nickname,
     sign_activity,
-    upload_public_key,
 )
 from aps_automation_sdk.core import get_workitem_status
 from aps_automation_sdk.ssa import SsaConfig, get_ssa_3lo_token
+from aps_automation_sdk.signing import load_private_key_data
+from .config import load_test_env, require_env
 
-
-def clean(value: str) -> str:
-    return value.strip().strip('"').strip("'")
-
-
-def require_env(name: str) -> str:
-    value = os.getenv(name)
-    if not value:
-        raise RuntimeError(f"Missing required environment variable: {name}")
-    return clean(value)
 
 
 def is_terminal_status(status: str) -> bool:
@@ -51,14 +37,14 @@ def is_terminal_status(status: str) -> bool:
 def test_ssa_only_autocad_list_layers_end_to_end(tmp_path: Path) -> None:
     """
     End-to-end live test using only SSA app credentials:
-    1) Generate signing keys + upload public key to SSA app profile
+    1) Check the existing signing key against the SSA app profile
     2) Deploy AutoCAD appbundle/activity with SSA app 2LO token
     3) Sign activity id
     4) Mint SSA-backed 3LO token
     5) Run public WorkItemAcc with ACC input/output
     6) Finalize output item in ACC
     """
-    load_dotenv(override=False)
+    load_test_env()
 
     bundle_zip = (Path(__file__).resolve().parents[1] / "fixtures" / "autocad_list_layers" / "ListLayers.zip")
     if not bundle_zip.exists():
@@ -68,50 +54,30 @@ def test_ssa_only_autocad_list_layers_end_to_end(tmp_path: Path) -> None:
     folder_id = require_env("APS_TEST_FOLDER_ID")
     source_item_urn = require_env("APS_TEST_SOURCE_ITEM_URN")
 
-    # Single app credentials for both deploy/public-key upload and runtime token minting
-    client_id_ssa = require_env("APS_SSA_CLIENT_ID")
-    client_secret_ssa = require_env("APS_SSA_CLIENT_SECRET")
-    service_account_id = require_env("APS_SSA_SERVICE_ACCOUNT_ID")
-    key_id = require_env("APS_SSA_KEY_ID")
-    private_key = require_env("APS_SSA_PRIVATE_KEY").replace("\\n", "\n")
-    ssa_scope = require_env("APS_SSA_SCOPE")
+    config = SsaConfig.from_env()
+    signing_key_json = require_env("APS_TEST_SIGNING_KEY_JSON")
 
     suffix = uuid.uuid4().hex[:8]
     app_bundle_id = f"it_listlayers_{suffix}"
     activity_id = f"it_listlayers_activity_{suffix}"
     alias = "dev"
     output_name = f"it-layers-{suffix}.txt"
-    # APS nickname constraints: <=20 chars, [a-zA-Z0-9_]
-    requested_nickname = "myUniqueNick_123_SSA"
 
     token2lo = ""
 
     try:
         print("Getting 2LO token from SSA app credentials", flush=True)
-        token2lo = get_token(client_id_ssa, client_secret_ssa)
-        nickname = set_nickname(token2lo, requested_nickname)
-        print(f"Using nickname: {nickname}", flush=True)
-        assert nickname == requested_nickname, (
-            f"Expected nickname '{requested_nickname}', got '{nickname}'. "
-            "Clear existing DA resources or use a different app so nickname can be set."
-        )
+        token2lo = get_token(config.client_id, config.client_secret)
+        profile = get_forgeapp_profile(token2lo)
+        nickname = profile.get("nickname")
+        assert isinstance(nickname, str) and nickname, "Set the app nickname before this test."
 
-        print("Generating signing key pair", flush=True)
         private_key_path = tmp_path / "signing_key.json"
-        public_key_path = tmp_path / "signing_public.json"
-        generate_key_file(str(private_key_path))
-        export_public_key(str(private_key_path), str(public_key_path))
-
-        print("Uploading public key to forgeapps/me for SSA app", flush=True)
-        with public_key_path.open("r", encoding="utf-8") as f:
-            public_key: dict[str, Any] = json.load(f)
-        upload_response = upload_public_key(token2lo, public_key)
-        print("Verifying uploaded public key on forgeapps/me", flush=True)
-        profile = upload_response if isinstance(upload_response, dict) else get_forgeapp_profile(token2lo)
-        profile_public_key = profile.get("publicKey") if isinstance(profile, dict) else None
-        assert isinstance(profile_public_key, dict), f"Missing publicKey in forgeapps/me response: {profile}"
-        assert profile_public_key.get("Exponent") == public_key.get("Exponent"), "Uploaded public key Exponent mismatch"
-        assert profile_public_key.get("Modulus") == public_key.get("Modulus"), "Uploaded public key Modulus mismatch"
+        private_key_path.write_text(signing_key_json, encoding="utf-8")
+        private_key_path.chmod(0o600)
+        key_data = load_private_key_data(str(private_key_path))
+        public_key = {name: key_data[name] for name in ("Exponent", "Modulus")}
+        assert profile.get("publicKey") == public_key, "The signing key must match the app public key."
 
         print("Deploying AutoCAD appbundle", flush=True)
         bundle = AppBundle(
@@ -156,17 +122,7 @@ def test_ssa_only_autocad_list_layers_end_to_end(tmp_path: Path) -> None:
         activity_signature = sign_activity(str(private_key_path), activity_full_alias)
 
         print("Minting SSA 3LO token", flush=True)
-        token3lo = get_ssa_3lo_token(
-            SsaConfig(
-                client_id=client_id_ssa,
-                client_secret=client_secret_ssa,
-                service_account_id=service_account_id,
-                key_id=key_id,
-                private_key=private_key,
-                scope=ssa_scope,
-            )
-        )
-        print(f"token3lo prefix: {token3lo[:20]}...", flush=True)
+        token3lo = get_ssa_3lo_token(config)
 
         print("Building ACC input/output arguments", flush=True)
         input_acc = ActivityInputParameterAcc(
@@ -229,17 +185,15 @@ def test_ssa_only_autocad_list_layers_end_to_end(tmp_path: Path) -> None:
         print("E2E flow completed successfully", flush=True)
 
     finally:
-        keep_resources = clean(os.getenv("APS_TEST_KEEP_DA_RESOURCES", "false")).lower() in {"1", "true", "yes"}
-        if keep_resources or not token2lo:
-            return
+        keep_resources = os.getenv("APS_TEST_KEEP_DA_RESOURCES", "false").strip().lower() in {"1", "true", "yes"}
+        if not keep_resources and token2lo:
+            print("cleanup: deleting activity/appbundle", flush=True)
+            try:
+                delete_activity(activity_id, token2lo)
+            except Exception as exc:  # pragma: no cover - best effort cleanup
+                print(f"cleanup warning (activity): {exc}", flush=True)
 
-        print("cleanup: deleting activity/appbundle", flush=True)
-        try:
-            delete_activity(activity_id, token2lo)
-        except Exception as exc:  # pragma: no cover - best effort cleanup
-            print(f"cleanup warning (activity): {exc}", flush=True)
-
-        try:
-            delete_appbundle(app_bundle_id, token2lo)
-        except Exception as exc:  # pragma: no cover - best effort cleanup
-            print(f"cleanup warning (appbundle): {exc}", flush=True)
+            try:
+                delete_appbundle(app_bundle_id, token2lo)
+            except Exception as exc:  # pragma: no cover - best effort cleanup
+                print(f"cleanup warning (appbundle): {exc}", flush=True)
