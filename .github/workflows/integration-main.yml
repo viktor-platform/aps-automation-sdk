@@ -1,77 +1,98 @@
-name: Integration Tests (main)
+name: SDK tests
 
 on:
   pull_request:
     branches:
       - main
+      - 'feat/**'
+  workflow_dispatch:
+    inputs:
+      run_e2e:
+        description: Run the full AutoCAD test
+        type: boolean
+        default: false
 
 permissions:
   contents: read
 
 concurrency:
-  group: integration-main-${{ github.ref }}
+  group: sdk-tests-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
+  unit:
+    name: Run unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv sync --locked --group dev
+      - run: uv run pytest -m 'not integration' -q
+
   integration:
     name: Run APS integration tests
+    needs: unit
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 30
     env:
       APS_SSA_CLIENT_ID: ${{ secrets.APS_SSA_CLIENT_ID }}
       APS_SSA_CLIENT_SECRET: ${{ secrets.APS_SSA_CLIENT_SECRET }}
       APS_SSA_SERVICE_ACCOUNT_ID: ${{ secrets.APS_SSA_SERVICE_ACCOUNT_ID }}
       APS_SSA_KEY_ID: ${{ secrets.APS_SSA_KEY_ID }}
       APS_SSA_PRIVATE_KEY: ${{ secrets.APS_SSA_PRIVATE_KEY }}
-      APS_SSA_SCOPE: ${{ secrets.APS_SSA_SCOPE }}
+      APS_SSA_SCOPE: ${{ secrets.APS_SSA_SCOPE || 'code:all data:read data:write data:create data:search' }}
       APS_TEST_PROJECT_ID: ${{ secrets.APS_TEST_PROJECT_ID }}
       APS_TEST_FOLDER_ID: ${{ secrets.APS_TEST_FOLDER_ID }}
       APS_TEST_SOURCE_ITEM_URN: ${{ secrets.APS_TEST_SOURCE_ITEM_URN }}
-      APS_TEST_KEEP_DA_RESOURCES: "false"
-
+      APS_TEST_SIGNING_KEY_JSON: ${{ secrets.APS_TEST_SIGNING_KEY_JSON }}
+      APS_TEST_KEEP_DA_RESOURCES: 'false'
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
-
-      - name: Set up uv
-        uses: astral-sh/setup-uv@v5
+          python-version: '3.11'
+      - uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
-
-      - name: Validate required secrets
+      - name: Check live test configuration
+        id: config
+        env:
+          MANUAL_RUN: ${{ github.event_name == 'workflow_dispatch' }}
+          RUN_E2E: ${{ inputs.run_e2e || false }}
         run: |
+          required=(APS_SSA_CLIENT_ID APS_SSA_CLIENT_SECRET APS_SSA_SERVICE_ACCOUNT_ID
+                    APS_SSA_KEY_ID APS_SSA_PRIVATE_KEY APS_TEST_PROJECT_ID APS_TEST_SOURCE_ITEM_URN)
+          if [ "$RUN_E2E" = "true" ]; then
+            required+=(APS_TEST_FOLDER_ID APS_TEST_SIGNING_KEY_JSON)
+          fi
           missing=()
-          required=(
-            APS_SSA_CLIENT_ID
-            APS_SSA_CLIENT_SECRET
-            APS_SSA_SERVICE_ACCOUNT_ID
-            APS_SSA_KEY_ID
-            APS_SSA_PRIVATE_KEY
-            APS_SSA_SCOPE
-            APS_TEST_PROJECT_ID
-            APS_TEST_FOLDER_ID
-            APS_TEST_SOURCE_ITEM_URN
-          )
-
           for var in "${required[@]}"; do
             if [ -z "${!var}" ]; then
               missing+=("$var")
             fi
           done
-
           if [ "${#missing[@]}" -gt 0 ]; then
-            echo "Missing required GitHub secrets/environment variables:"
-            printf ' - %s\n' "${missing[@]}"
-            exit 1
+            echo 'configured=false' >> "$GITHUB_OUTPUT"
+            printf 'Missing secret: %s\n' "${missing[@]}" >> "$GITHUB_STEP_SUMMARY"
+            if [ "$MANUAL_RUN" = "true" ]; then
+              exit 1
+            fi
+            echo '::notice::Live tests skipped. See the job summary for missing secret names.'
+          else
+            echo 'configured=true' >> "$GITHUB_OUTPUT"
           fi
-
       - name: Install dependencies
+        if: steps.config.outputs.configured == 'true'
         run: uv sync --locked --group dev
-
-      - name: Run integration tests
-        run: uv run --group dev pytest -m integration -vv --maxfail=1
+      - name: Check SSA and ACC connection
+        if: steps.config.outputs.configured == 'true'
+        run: uv run pytest -m 'integration and not e2e' -v --tb=short --maxfail=1
+      - name: Run full AutoCAD test
+        if: steps.config.outputs.configured == 'true' && github.event_name == 'workflow_dispatch' && inputs.run_e2e
+        run: uv run pytest -m e2e -v --tb=short --maxfail=1

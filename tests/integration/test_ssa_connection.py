@@ -1,29 +1,17 @@
 from __future__ import annotations
 
-import os
-
-from dotenv import load_dotenv
 import pytest
 
 from aps_automation_sdk.acc import find_tip_storage_id, get_item_tip_version
 from aps_automation_sdk.ssa import SsaConfig, get_ssa_3lo_token
+from .config import load_test_env, require_env
 
-
-def clean(value: str) -> str:
-    return value.strip().strip('"').strip("'")
-
-
-def require_env(name: str) -> str:
-    value = os.getenv(name)
-    if not value:
-        raise RuntimeError(f"Missing required environment variable: {name}")
-    return clean(value)
 
 
 @pytest.mark.integration
 def test_ssa_connection() -> None:
     """Live check: mint SSA token and resolve ACC tip/storage."""
-    load_dotenv(override=False)
+    load_test_env()
 
     project_id = require_env("APS_TEST_PROJECT_ID")
     source_item_urn = require_env("APS_TEST_SOURCE_ITEM_URN")

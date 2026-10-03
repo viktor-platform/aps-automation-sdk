@@ -45,28 +45,54 @@ For development and integration test variables you can also use `.env.sample.dev
 
 ## Test
 
-We use two live tests for the SSA and ACC flow.
+Run the unit tests without APS credentials:
 
-`tests/integration/test_ssa_connection.py` checks that the SDK can mint an SSA based 3lo token and read ACC tip storage from a source item.
+```bash
+uv sync --locked --group dev
+uv run pytest -m "not integration" -q
+```
 
-`tests/integration/test_ssa_only_autocad_list_layers_e2e.py` runs the full end to end flow with signing. It sets nickname, uploads public key, deploys appbundle and activity, runs a public workitem, waits for success, and finalizes the output in ACC.
+The live connection test gets an SSA token and reads ACC tip storage:
 
-Use these environment variables.
+```bash
+uv run pytest -m "integration and not e2e" -v
+```
 
-`APS_SSA_CLIENT_ID`
-`APS_SSA_CLIENT_SECRET`
-`APS_SSA_SERVICE_ACCOUNT_ID`
-`APS_SSA_KEY_ID`
-`APS_SSA_PRIVATE_KEY`
-`APS_SSA_SCOPE`
-`APS_TEST_PROJECT_ID`
-`APS_TEST_SOURCE_ITEM_URN`
+Local tests load `.env` from the repository root. Existing process variables take priority.
+The SDK does not load `.env` on import. In a notebook or script, call `load_dotenv()` before you read local credentials.
 
-The end to end test also needs `APS_TEST_FOLDER_ID`.
+Use these variables for the connection test:
 
-For SSA setup and 3lo token generation read [SSA + ACC Hub Setup](docs/ssa-acc-hub-setup.md).
+- `CLIENT_ID_SSA` and `CLIENT_SECRET_SSA`, or the `APS_SSA_CLIENT_ID` and `APS_SSA_CLIENT_SECRET` aliases
+- `APS_SSA_SERVICE_ACCOUNT_ID`
+- `APS_SSA_KEY_ID`
+- `APS_SSA_PRIVATE_KEY`
+- `APS_TEST_PROJECT_ID`
+- `APS_TEST_SOURCE_ITEM_URN`
 
-End to end test reference [tests/integration/test_ssa_only_autocad_list_layers_e2e.py](tests/integration/test_ssa_only_autocad_list_layers_e2e.py).
+`APS_SSA_SCOPE` is optional. The SDK uses its default scopes if the variable is absent.
+For SSA setup, read [SSA + ACC Hub Setup](docs/ssa-acc-hub-setup.md).
+
+CI uses GitHub secrets. It does not load a local `.env` file. Unit tests run on all PRs.
+The connection test runs on PRs from this repository when the required secrets exist.
+If secrets are absent, the workflow reports the missing names and skips the live check.
+
+The full AutoCAD test creates an appbundle, an activity, a workitem, and an ACC output item.
+It reads the app nickname and checks its public key. It does not replace either value.
+It deletes its DA resources after the test, unless `APS_TEST_KEEP_DA_RESOURCES=true`.
+The ACC output item remains in the test folder.
+
+Run this test only in a test project:
+
+```bash
+uv run pytest -m e2e -v
+```
+
+It also needs `APS_TEST_FOLDER_ID` and `APS_TEST_SIGNING_KEY_JSON`.
+The JSON must contain the private signing key that matches the app's public key.
+This key is separate from the SSA JWT private key. See `.env.sample.dev`.
+For CI, add the JSON as a GitHub secret. Select **Run workflow** and enable **Run the full AutoCAD test**.
+The manual run fails if required secrets are absent.
 
 ## AI-Assisted Development
 
@@ -92,7 +118,7 @@ If you add or modify methods, regenerate `llms-full.txt` so external agents alwa
 Run:
 
 ```bash
-python skills/full-llm-export/scripts/export_repo_context.py --root . --output llms-full.txt
+python .agents/skills/full-llm-export/scripts/export_repo_context.py --root . --output llms-full.txt
 ```
 
 Or invoke the local skill:
