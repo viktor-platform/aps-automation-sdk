@@ -2,7 +2,6 @@ import os
 import time
 from dataclasses import dataclass
 
-import jwt
 import requests
 
 APS_BASE_URL = "https://developer.api.autodesk.com"
@@ -90,6 +89,13 @@ def build_ssa_jwt(config: SsaConfig, expires_in_seconds: int = 300) -> str:
     if not 1 <= expires_in_seconds <= 300:
         raise ValueError("expires_in_seconds must be between 1 and 300")
 
+    try:
+        import jwt
+    except ImportError as exc:
+        raise RuntimeError(
+            'SSA features require PyJWT. Install "aps-automation-sdk[ssa]".'
+        ) from exc
+
     now = int(time.time())
     claims = {
         "iss": config.client_id,
@@ -117,7 +123,7 @@ def parse_token_response(payload: dict[str, object]) -> str:
     token_type = str(payload.get("token_type", "")).lower()
 
     if not access_token or token_type != "bearer":
-        raise RuntimeError(f"Unexpected SSA token response: {payload}")
+        raise RuntimeError("SSA token response must contain a bearer access token")
 
     return str(access_token)
 

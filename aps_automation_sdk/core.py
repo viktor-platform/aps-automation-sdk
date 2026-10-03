@@ -2,6 +2,8 @@ import requests
 import time
 import logging
 import os
+import math
+from urllib.parse import quote
 from dataclasses import dataclass
 from typing import Annotated, Any, Callable, Literal
 from .dsl import RegisterBundleResponse, UploadParameters, GetSignedS3UrlsResponse, CompleteUploadRequest
@@ -56,13 +58,11 @@ def get_nickname(token: str) -> str:
 
 def get_signed_s3_upload(
         bucketKey: Annotated[str, "Unique Name you assign to a bucket, Possible values: -_.a-z0-9 (between 3-128 characters in length"],
-        objectKey: Annotated[str, "URL-encoded object key to create signed URL for, basicallythenameofthefile"],
+        objectKey: Annotated[str, "Raw object key. Do not URL-encode this value."],
         token: Annotated[str, "2Lo Token"]
 )->GetSignedS3UrlsResponse:
-    """
-    We need to check the encoded url part of this!
-    """
-    url = f"{OSS_V2_BASE_URL}/buckets/{bucketKey}/objects/{objectKey}/signeds3upload"
+    """Get signed upload URLs for a raw OSS object key."""
+    url = f"{OSS_V2_BASE_URL}/buckets/{bucketKey}/objects/{quote(objectKey, safe='')}/signeds3upload"
     headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
     r = requests.get(url, headers=headers, timeout=30)
     r.raise_for_status()
@@ -85,11 +85,11 @@ def put_to_signed_url(signed_url: str, file_path: str) -> int:
 
 def complete_signed_s3_upload(
         bucketKey: Annotated[str, "Unique Name of the bocket"],
-        objectKey: Annotated[str, "URL-encoded object key to create signed URL for, basicallythenameofthefile"],
+        objectKey: Annotated[str, "Raw object key. Do not URL-encode this value."],
         uploadKey: Annotated[str, "UploadKey "],
         token: Annotated[str, "2Lo Token"]
     ) -> CompleteUploadRequest:
-    url = f"{OSS_V2_BASE_URL}/buckets/{bucketKey}/objects/{objectKey}/signeds3upload"
+    url = f"{OSS_V2_BASE_URL}/buckets/{bucketKey}/objects/{quote(objectKey, safe='')}/signeds3upload"
     payload = {"uploadKey": uploadKey}
     header = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
     r = requests.post(url, headers=header, json=payload, timeout=30)
@@ -98,7 +98,7 @@ def complete_signed_s3_upload(
 
 def build_oss_urn(
         bucketKey:Annotated[str, "Unique Name of the bucket"],
-        objectKey: Annotated[str, "URL-encode object key"]
+        objectKey: Annotated[str, "Raw object key"]
     ) -> str:
     return f"urn:adsk.objects:os.object:{bucketKey}/{objectKey}"
 
@@ -112,7 +112,7 @@ def register_appbundle(
     url = f"{DA_BASE_URL}/appbundles" 
     payload = {"id": appBundleId, "engine": engine, "description":description}
     header = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
-    r = requests.post(url,headers=header, json=payload)
+    r = requests.post(url, headers=header, json=payload, timeout=30)
     r.raise_for_status()
     return RegisterBundleResponse(**r.json())
 
@@ -143,10 +143,11 @@ def create_appbundle_alias(
 
 def get_signed_s3_download(
         bucketKey: Annotated[str, "Unique name of the bucket"],
-        objectKey: Annotated[str, "URL-encoded object key to create signed URL for, basicallythenameofthefile"],
+        objectKey: Annotated[str, "Raw object key. Do not URL-encode this value."],
         token: Annotated[str, "2Lo Token"]
-) -> None:
-    url = f"{OSS_V2_BASE_URL}/buckets/{bucketKey}/objects/{objectKey}/signeds3download"
+) -> dict[str, Any]:
+    """Get a signed download URL for a raw OSS object key."""
+    url = f"{OSS_V2_BASE_URL}/buckets/{bucketKey}/objects/{quote(objectKey, safe='')}/signeds3download"
     header = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
     r = requests.get(url=url, headers=header, timeout=30)
     r.raise_for_status()
@@ -191,9 +192,6 @@ def create_activity(
     url = f"{DA_BASE_URL}/activities"
     r = requests.post(url, headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"}, json=payload, timeout=30)
     
-    if r.status_code != 200:
-        print(f" Error found: {r.text=}")
-    
     r.raise_for_status()
     return r.json()
 
@@ -205,9 +203,6 @@ def run_work_item(token: str, full_activity_alias: str, work_item_args: dict[str
         "arguments": work_item_args 
     }
     r = requests.post(url, headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"}, json=payload, timeout=30)
-    
-    if r.status_code != 200:
-        print(f" Error found: {r.text=}")
     
     r.raise_for_status()
     return r.json()
@@ -222,19 +217,14 @@ def run_public_work_item(token: str, full_activity_alias: str, work_item_args: d
             "workItem": signature
         }
     }
-    import pprint
-    pprint.pp(f"{payload=}")
     r = requests.post(url, headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json","x-ads-workitem-signature": signature}, json=payload, timeout=30)
-    
-    if r.status_code != 200:
-        print(f" Error found: {r.text=}")
     
     r.raise_for_status()
     return r.json()
 
 
 
-def get_workitem_status(workitem_id: str, token: str) -> dict[str, Any]:
+def get_workitem_status(workitem_id: str, token: str, *, timeout: float = 30) -> dict[str, Any]:
     """
     Get the current status and report URL for a WorkItem.
     """
@@ -242,7 +232,7 @@ def get_workitem_status(workitem_id: str, token: str) -> dict[str, Any]:
     r = requests.get(
         url,
         headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
-        timeout=30,
+        timeout=timeout,
     )
     r.raise_for_status()
     return r.json()
@@ -260,40 +250,47 @@ def poll_workitem_status(
     interval: int = 10,
     on_event: PollCallback | None = None,
 ) -> dict[str, Any]:
-    elapsed = 0
+    """Poll until completion or the client wait deadline.
+
+    Include HTTP and callback time in the wait. Return the last status when the
+    deadline expires. A zero wait makes one status request without sleeping.
+    Each HTTP timeout limits socket waits; it is not a total request duration.
+    """
+    if not math.isfinite(max_wait) or max_wait < 0:
+        raise ValueError("max_wait must be finite and zero or greater")
+    if not math.isfinite(interval) or interval <= 0:
+        raise ValueError("interval must be finite and greater than zero")
+
+    start = time.monotonic()
+    deadline = start + max_wait
+    status_resp: dict[str, Any] = {}
     logging.info("Polling work item status, id=%s", workitem_id)
 
-    last_status = ""
-    status_resp = {}
-    
-    while elapsed <= max_wait:
-        status_resp = get_workitem_status(workitem_id, token)
-        last_status = str(status_resp.get("status", ""))
-        report_url = status_resp.get("reportUrl")
-        is_terminal = is_terminal_workitem_status(last_status)
+    first_request = True
+    while True:
+        remaining = deadline - time.monotonic()
+        if not first_request and remaining <= 0:
+            break
+        request_timeout = min(30, remaining) if remaining > 0 else 30
+        status_resp = get_workitem_status(workitem_id, token, timeout=request_timeout)
+        first_request = False
+        status = str(status_resp.get("status", ""))
+        is_terminal = is_terminal_workitem_status(status)
+        elapsed = int(time.monotonic() - start)
 
         if on_event:
-            on_event(
-                WorkItemPollEvent(
-                    workitem_id=workitem_id,
-                    status=last_status,
-                    elapsed_seconds=elapsed,
-                    max_wait_seconds=max_wait,
-                    report_url=report_url,
-                    is_terminal=is_terminal,
-                )
-            )
+            on_event(WorkItemPollEvent(
+                workitem_id=workitem_id,
+                status=status,
+                elapsed_seconds=elapsed,
+                max_wait_seconds=max_wait,
+                report_url=status_resp.get("reportUrl"),
+                is_terminal=is_terminal,
+            ))
+        logging.info("[%3ds] status=%s", elapsed, status)
+        remaining = deadline - time.monotonic()
+        if is_terminal or remaining <= 0:
+            break
+        time.sleep(min(interval, remaining))
 
-        logging.info("[%3ds] status=%s report_url=%s", elapsed, last_status, report_url)
-        if is_terminal:
-            report = status_resp.get("reportUrl")
-            if report:
-                logging.info("Report URL: %s", report)
-            break
-        if elapsed >= max_wait:
-            break
-        time.sleep(interval)
-        elapsed += interval
-    
     return status_resp
-    
