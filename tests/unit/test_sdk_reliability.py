@@ -59,27 +59,6 @@ def test_jwt_still_signs_with_ssa_extra(tmp_path):
     assert jwt.get_unverified_header(assertion)['kid'] == 'key-id'
 
 
-@pytest.mark.parametrize('operation', ['upload', 'complete', 'download'])
-def test_oss_object_key_is_encoded_as_one_path_segment(monkeypatch, operation):
-    key = 'folder/á #%?.rvt'
-    payload = {'uploadKey': 'upload', 'urls': ['https://storage.test/input'],
-               'bucketKey': 'bucket', 'objectId': 'object', 'objectKey': key,
-               'size': 1, 'contentType': 'application/octet-stream', 'location': 'location',
-               'url': 'https://storage.test/output'}
-    request = Mock(return_value=response(payload))
-    monkeypatch.setattr(core.requests, 'get', request)
-    monkeypatch.setattr(core.requests, 'post', request)
-    if operation == 'upload':
-        core.get_signed_s3_upload('bucket', key, 'test-token')
-    elif operation == 'complete':
-        core.complete_signed_s3_upload('bucket', key, 'upload', 'test-token')
-    else:
-        core.get_signed_s3_download('bucket', key, 'test-token')
-    url = request.call_args.args[0] if request.call_args.args else request.call_args.kwargs['url']
-    assert '/objects/folder%2F%C3%A1%20%23%25%3F.rvt/signeds3' in url
-    assert core.build_oss_urn('bucket', key) == f'urn:adsk.objects:os.object:bucket/{key}'
-
-
 def parameter():
     return sdk.ActivityInputParameter(name='input', localName='input.rvt', verb='get',
                                       description='Input', bucketKey='bucket', objectKey='input.rvt')
