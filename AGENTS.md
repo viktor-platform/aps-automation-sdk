@@ -50,6 +50,10 @@ Functional groups and key methods:
   - `get_workitem_status(...)`
   - `poll_workitem_status(...)`
 
+`WorkItemPollEvent.approximate_queue_position` contains the APS Beta queue position
+while pending. It defaults to `None`. Missing, null, invalid, and nonpending values
+produce `None` in the event. The raw status response remains unchanged.
+
 Use when:
 - You want direct API control without higher-level classes.
 
@@ -266,7 +270,7 @@ CLI and skill available:
 | `run_work_item` | [DA WorkItems POST](https://aps.autodesk.com/en/docs/design-automation/v3/reference/http/workitems-POST/) | Submits work item. |
 | `run_public_work_item` | [DA WorkItems POST](https://aps.autodesk.com/en/docs/design-automation/v3/reference/http/workitems-POST/) | Submits signed/public work item with signature headers/body. |
 | `get_workitem_status` | [DA WorkItems GET](https://aps.autodesk.com/en/docs/design-automation/v3/reference/http/workitems-id-GET/) | Gets current execution status/report URL. |
-| `poll_workitem_status` | [DA WorkItems GET](https://aps.autodesk.com/en/docs/design-automation/v3/reference/http/workitems-id-GET/) | Polling loop around status endpoint. |
+| `poll_workitem_status` | [DA WorkItems GET](https://aps.autodesk.com/en/docs/design-automation/v3/reference/http/workitems-id-GET/) | Polls status and sends callback events. Includes a valid approximate queue position while pending. |
 
 ### `utils.py`
 | Method | APS reference | Note |
