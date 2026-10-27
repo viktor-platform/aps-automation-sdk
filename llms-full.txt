@@ -1109,6 +1109,7 @@ class WorkItemPollEvent:
     max_wait_seconds: int
     report_url: str | None
     is_terminal: bool
+    approximate_queue_position: int | None = None
 
 def get_nickname(token: str) -> str:
     """
@@ -1328,6 +1329,8 @@ def poll_workitem_status(
     Include HTTP and callback time in the wait. Return the last status when the
     deadline expires. A zero wait makes one status request without sleeping.
     Each HTTP timeout limits socket waits; it is not a total request duration.
+    Callback events include the approximate queue position while pending, if
+    APS returns a positive integer. This Beta field can be absent or null.
     """
     if not math.isfinite(max_wait) or max_wait < 0:
         raise ValueError("max_wait must be finite and zero or greater")
@@ -1352,6 +1355,13 @@ def poll_workitem_status(
         elapsed = int(time.monotonic() - start)
 
         if on_event:
+            queue_position = status_resp.get("approximateQueuePosition")
+            if (
+                status.strip().lower() != "pending"
+                or type(queue_position) is not int
+                or queue_position < 1
+            ):
+                queue_position = None
             on_event(WorkItemPollEvent(
                 workitem_id=workitem_id,
                 status=status,
@@ -1359,6 +1369,7 @@ def poll_workitem_status(
                 max_wait_seconds=max_wait,
                 report_url=status_resp.get("reportUrl"),
                 is_terminal=is_terminal,
+                approximate_queue_position=queue_position,
             ))
         logging.info("[%3ds] status=%s", elapsed, status)
         remaining = deadline - time.monotonic()

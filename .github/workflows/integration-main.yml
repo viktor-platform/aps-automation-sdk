@@ -36,7 +36,8 @@ jobs:
         with:
           enable-cache: true
       - run: uv sync --locked --group dev
-      - run: uv run pytest -m 'not integration' -q
+      - name: Run unit tests and callback compatibility checks
+        run: uv run pytest -m 'not integration' -v
 
   integration:
     name: Run APS integration tests

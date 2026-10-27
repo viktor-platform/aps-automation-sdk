@@ -52,6 +52,53 @@ CLIENT_SECRET=your_client_secret_here
 
 You can use `.env.sample` as a reference. To get your credentials, create an Autodesk Platform Services application at: https://get-started.aps.autodesk.com/
 
+## Poll workitem progress
+
+Use `on_event` to receive a `WorkItemPollEvent` after each status request.
+The event includes `approximate_queue_position: int | None`.
+It contains a positive integer while the workitem is pending, if APS supplies a position.
+It is `None` when the value is absent, null, or invalid, or when the workitem is no longer pending.
+
+With an existing `work_item` and token:
+
+```python
+from aps_automation_sdk import WorkItemPollEvent
+
+
+def show_progress(event: WorkItemPollEvent) -> None:
+    if event.status == "pending":
+        message = "Waiting in APS queue."
+        if event.approximate_queue_position is not None:
+            message += f" Position: approximately {event.approximate_queue_position}."
+    elif event.status == "inprogress":
+        message = "Revit model generation is running."
+    else:
+        message = f"APS job status: {event.status}."
+    print(f"{message} Elapsed: {event.elapsed_seconds} s.")
+
+
+work_item_id = work_item.run(token)
+result = work_item.poll(
+    work_item_id=work_item_id,
+    token=token,
+    interval=5,
+    max_wait=600,
+    on_event=show_progress,
+)
+```
+
+In a VIKTOR app, send the message with `vkt.progress_message(message=...)`.
+The SDK does not require VIKTOR.
+
+APS marks queue position as Beta. Position can increase or decrease between requests.
+It does not provide an estimated wait time or a completion percentage.
+See the [APS status reference](https://aps.autodesk.com/en/docs/design-automation/v3/reference/http/workitems-id-GET/)
+and the [10 August 2026 change](https://aps.autodesk.com/en/docs/design-automation/v3/change_history/changelog_v3/).
+
+Existing event constructors and callbacks can omit the new field. Its default is `None`.
+Code that serializes the complete event must accept one additional field.
+The raw status dictionary returned by `poll()` is unchanged.
+
 ## For Agents
 This repository provides agent context files for developers:
 
