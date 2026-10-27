@@ -29,8 +29,8 @@ Relevant exports:
 Purpose: Low-level wrappers around APS REST endpoints.
 
 Functional groups and key methods:
-- Region/URL helpers:
-  - `get_da_base_url(region="US")`
+- Base URL:
+  - `DA_BASE_URL` uses the US-East endpoint.
 - OSS signed upload/download:
   - `get_signed_s3_upload(...)`
   - `put_to_signed_url(signed_url, file_path)`
@@ -49,7 +49,6 @@ Functional groups and key methods:
   - `run_public_work_item(...)`
   - `get_workitem_status(...)`
   - `poll_workitem_status(...)`
-  - `fetch_report_content(report_url)`
 
 Use when:
 - You want direct API control without higher-level classes.
@@ -146,7 +145,7 @@ ACC-specific parameter/work item classes (`classes.py`):
   - `ActivityOutputParameterAcc` (`work_item_arg_3lo(...)`, `create_acc_item(...)`, `get_lineage_urn()`)
 - Orchestration:
   - `WorkItemAcc.build_arguments_3lo(...)`
-  - `WorkItemAcc.execute_and_finalize(...)`
+  - `WorkItemAcc.execute(..., activity_signature=...)`
 
 Use when:
 - Your inputs/outputs are in Autodesk Construction Cloud and require 3LO token handling.
@@ -252,7 +251,6 @@ CLI and skill available:
 ### `core.py`
 | Method | APS reference | Note |
 |---|---|---|
-| `get_da_base_url` | [DA Overview](https://aps.autodesk.com/en/docs/design-automation/v3/developers_guide/overview/) | Helper exists in SDK, but this repo documentation standardizes on US endpoint usage. |
 | `get_nickname` | [DA Forge App Me GET](https://aps.autodesk.com/en/docs/design-automation/v3/reference/http/forgeapps-me-GET/) | Reads current DA app nickname. |
 | `get_signed_s3_upload` | [OSS Signed S3 Upload GET](https://aps.autodesk.com/en/docs/data/v2/reference/http/buckets-bucketKey-objects-objectName-signeds3upload-GET/) | Gets upload URL + `uploadKey`. |
 | `put_to_signed_url` | [OSS Signed S3 Upload GET](https://aps.autodesk.com/en/docs/data/v2/reference/http/buckets-bucketKey-objects-objectName-signeds3upload-GET/) | Uploads bytes to signed URL returned by APS. |
@@ -269,7 +267,6 @@ CLI and skill available:
 | `run_public_work_item` | [DA WorkItems POST](https://aps.autodesk.com/en/docs/design-automation/v3/reference/http/workitems-POST/) | Submits signed/public work item with signature headers/body. |
 | `get_workitem_status` | [DA WorkItems GET](https://aps.autodesk.com/en/docs/design-automation/v3/reference/http/workitems-id-GET/) | Gets current execution status/report URL. |
 | `poll_workitem_status` | [DA WorkItems GET](https://aps.autodesk.com/en/docs/design-automation/v3/reference/http/workitems-id-GET/) | Polling loop around status endpoint. |
-| `fetch_report_content` | [DA WorkItems GET](https://aps.autodesk.com/en/docs/design-automation/v3/reference/http/workitems-id-GET/) | Uses `reportUrl` returned by status payload. |
 
 ### `utils.py`
 | Method | APS reference | Note |
@@ -329,7 +326,7 @@ CLI and skill available:
 | `ActivityOutputParameterAcc.get_lineage_urn` | [ACC Items POST](https://aps.autodesk.com/en/docs/data/v1/reference/http/projects-project_id-items-POST/) | Returns lineage URN cached from finalize step. |
 | `WorkItemAcc.build_arguments_3lo` | [DA WorkItems POST](https://aps.autodesk.com/en/docs/design-automation/v3/reference/http/workitems-POST/) | Builds request body for 3LO ACC scenario. |
 | `WorkItemAcc.run_public_activity` | [DA WorkItems POST](https://aps.autodesk.com/en/docs/design-automation/v3/reference/http/workitems-POST/) | Submits signed/public activity work item. |
-| `WorkItemAcc.execute_and_finalize` | [DA WorkItems POST](https://aps.autodesk.com/en/docs/design-automation/v3/reference/http/workitems-POST/), [DA WorkItems GET](https://aps.autodesk.com/en/docs/design-automation/v3/reference/http/workitems-id-GET/), [ACC Versions POST](https://aps.autodesk.com/en/docs/data/v1/reference/http/projects-project_id-versions-POST/), [ACC Items POST](https://aps.autodesk.com/en/docs/data/v1/reference/http/projects-project_id-items-POST/) | End-to-end ACC pipeline. |
+| `WorkItemAcc.execute` | [DA WorkItems POST](https://aps.autodesk.com/en/docs/design-automation/v3/reference/http/workitems-POST/) and [DA WorkItems GET](https://aps.autodesk.com/en/docs/design-automation/v3/reference/http/workitems-id-GET/) | Submit and poll a signed workitem. Finalize outputs with `create_acc_item` after success. |
 
 ### `acc.py`
 | Method | APS reference | Note |

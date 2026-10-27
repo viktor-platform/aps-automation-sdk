@@ -1,4 +1,5 @@
 import json
+from requests import HTTPError
 from typing import Literal, Any, Optional
 from pydantic import BaseModel, Field, PrivateAttr
 from .core import (
@@ -45,10 +46,14 @@ class ActivityParameter(BaseModel):
         return self.bucketKey, self.objectKey
 
     def ensure_bucket(self, token: str) -> None:
+        """Create the bucket. Ignore only the existing-bucket conflict."""
+        if not self.bucketKey:
+            raise ValueError(f"{self.name}: bucketKey is required")
         try:
             create_bucket(bucketKey=self.bucketKey, token=token)
-        except Exception:
-            pass
+        except HTTPError as exc:
+            if exc.response is None or exc.response.status_code != 409:
+                raise
 
     def upload_file_to_oss(self, file_path: str, token: str) -> None:
         bucketKey, objectKey = self.oss_keys()
@@ -312,8 +317,6 @@ class UploadActivityInputParameter(ActivityInputParameter):
         storage_id = create_storage(project_id=self.project_id, folder_urn=self.folder_id, file_name=self.file_name, token=token)
         bucket_key, object_key = storage_id.split("urn:adsk.objects:os.object:")[1].split("/", 1)
         signed = get_signed_s3_upload(bucketKey=bucket_key, objectKey=object_key, token=token)
-        print("**"*20)
-        print(f"{signed=}")
         put_to_signed_url(signed_url=signed.urls[0], file_path=self.file_path)
         complete_signed_s3_upload(bucketKey=bucket_key, objectKey=object_key, uploadKey=signed.uploadKey, token=token)
 
