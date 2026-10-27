@@ -1025,10 +1025,8 @@ import logging
 import os
 from dataclasses import dataclass
 from typing import Annotated, Any, Callable, Literal
-from dotenv import load_dotenv
 from .dsl import RegisterBundleResponse, UploadParameters, GetSignedS3UrlsResponse, CompleteUploadRequest
 
-load_dotenv()
 
 APS_BASE_URL = "https://developer.api.autodesk.com"
 OSS_V2_BASE_URL = f"{APS_BASE_URL}/oss/v2"

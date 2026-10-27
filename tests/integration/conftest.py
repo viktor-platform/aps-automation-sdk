@@ -11,6 +11,12 @@ from aps_automation_sdk.core import (
     put_to_signed_url,
 )
 from aps_automation_sdk.ssa import SsaConfig, get_ssa_3lo_token
+from .config import load_test_env
+
+
+@pytest.fixture(scope="session", autouse=True)
+def test_environment() -> None:
+    load_test_env()
 
 
 def _require_env(name: str) -> str:
