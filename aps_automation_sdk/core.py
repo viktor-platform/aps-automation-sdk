@@ -3,7 +3,6 @@ import time
 import logging
 import os
 import math
-from urllib.parse import quote
 from dataclasses import dataclass
 from typing import Annotated, Any, Callable, Literal
 from .dsl import RegisterBundleResponse, UploadParameters, GetSignedS3UrlsResponse, CompleteUploadRequest
@@ -58,11 +57,13 @@ def get_nickname(token: str) -> str:
 
 def get_signed_s3_upload(
         bucketKey: Annotated[str, "Unique Name you assign to a bucket, Possible values: -_.a-z0-9 (between 3-128 characters in length"],
-        objectKey: Annotated[str, "Raw object key. Do not URL-encode this value."],
+        objectKey: Annotated[str, "URL-encoded object key to create signed URL for, basicallythenameofthefile"],
         token: Annotated[str, "2Lo Token"]
 )->GetSignedS3UrlsResponse:
-    """Get signed upload URLs for a raw OSS object key."""
-    url = f"{OSS_V2_BASE_URL}/buckets/{bucketKey}/objects/{quote(objectKey, safe='')}/signeds3upload"
+    """
+    We need to check the encoded url part of this!
+    """
+    url = f"{OSS_V2_BASE_URL}/buckets/{bucketKey}/objects/{objectKey}/signeds3upload"
     headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
     r = requests.get(url, headers=headers, timeout=30)
     r.raise_for_status()
@@ -85,11 +86,11 @@ def put_to_signed_url(signed_url: str, file_path: str) -> int:
 
 def complete_signed_s3_upload(
         bucketKey: Annotated[str, "Unique Name of the bocket"],
-        objectKey: Annotated[str, "Raw object key. Do not URL-encode this value."],
+        objectKey: Annotated[str, "URL-encoded object key to create signed URL for, basicallythenameofthefile"],
         uploadKey: Annotated[str, "UploadKey "],
         token: Annotated[str, "2Lo Token"]
     ) -> CompleteUploadRequest:
-    url = f"{OSS_V2_BASE_URL}/buckets/{bucketKey}/objects/{quote(objectKey, safe='')}/signeds3upload"
+    url = f"{OSS_V2_BASE_URL}/buckets/{bucketKey}/objects/{objectKey}/signeds3upload"
     payload = {"uploadKey": uploadKey}
     header = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
     r = requests.post(url, headers=header, json=payload, timeout=30)
@@ -98,7 +99,7 @@ def complete_signed_s3_upload(
 
 def build_oss_urn(
         bucketKey:Annotated[str, "Unique Name of the bucket"],
-        objectKey: Annotated[str, "Raw object key"]
+        objectKey: Annotated[str, "URL-encode object key"]
     ) -> str:
     return f"urn:adsk.objects:os.object:{bucketKey}/{objectKey}"
 
@@ -143,11 +144,10 @@ def create_appbundle_alias(
 
 def get_signed_s3_download(
         bucketKey: Annotated[str, "Unique name of the bucket"],
-        objectKey: Annotated[str, "Raw object key. Do not URL-encode this value."],
+        objectKey: Annotated[str, "URL-encoded object key to create signed URL for, basicallythenameofthefile"],
         token: Annotated[str, "2Lo Token"]
 ) -> dict[str, Any]:
-    """Get a signed download URL for a raw OSS object key."""
-    url = f"{OSS_V2_BASE_URL}/buckets/{bucketKey}/objects/{quote(objectKey, safe='')}/signeds3download"
+    url = f"{OSS_V2_BASE_URL}/buckets/{bucketKey}/objects/{objectKey}/signeds3download"
     header = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
     r = requests.get(url=url, headers=header, timeout=30)
     r.raise_for_status()
