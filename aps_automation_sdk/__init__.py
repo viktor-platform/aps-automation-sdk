@@ -13,6 +13,9 @@ from .classes import (
     WorkItemAcc
 )
 from .core import (
+    AutomationEngine,
+    EngineQueueStats,
+    get_engine_queue_stats,
     WorkItemPollEvent,
     PollCallback,
 )
@@ -69,6 +72,9 @@ __all__ = [
     "ActivityOutputParameterAcc",
     "UploadActivityInputParameter",
     "WorkItemAcc",
+    "AutomationEngine",
+    "EngineQueueStats",
+    "get_engine_queue_stats",
     "WorkItemPollEvent",
     "PollCallback",
     "get_token",
@@ -102,4 +108,4 @@ __all__ = [
     "get_translation_info",
 ]
 
-__version__ = "0.2.0rc1"
+__version__ = "0.2.0rc2"

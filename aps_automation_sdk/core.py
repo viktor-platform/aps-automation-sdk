@@ -4,7 +4,7 @@ import logging
 import os
 import math
 from dataclasses import dataclass
-from typing import Annotated, Any, Callable, Literal
+from typing import Annotated, Any, Callable, Literal, TypedDict, get_args
 from .dsl import RegisterBundleResponse, UploadParameters, GetSignedS3UrlsResponse, CompleteUploadRequest
 
 
@@ -14,6 +14,14 @@ OSS_V4_BASE_URL = f"{APS_BASE_URL}/oss/v4"
 MD_BASE_URL = f"{APS_BASE_URL}/modelderivative/v2" 
 DA_BASE_URL = f"{APS_BASE_URL}/da/us-east/v3" 
 AUTH_URL = f"{APS_BASE_URL}/authentication/v2/token"
+
+AutomationEngine = Literal["AutoCAD", "Revit", "Inventor", "Fusion", "3dsMax"]
+
+
+class EngineQueueStats(TypedDict):
+    p50QueueTimeMs: float
+    p95QueueTimeMs: float
+
 
 KnownWorkItemStatus = Literal[
     "pending",
@@ -37,6 +45,29 @@ class WorkItemPollEvent:
     report_url: str | None
     is_terminal: bool
     approximate_queue_position: int | None = None
+
+
+def get_engine_queue_stats(
+    engine: AutomationEngine, token: str, *, timeout: float = 30,
+) -> EngineQueueStats:
+    """Get engine queue wait percentiles for the last five minutes.
+
+    APS returns p50QueueTimeMs and p95QueueTimeMs in milliseconds. A value of
+    -1.0 means no recent data. Use an engine name without a version. This Beta
+    endpoint describes the shared engine queue. It is not a job wait estimate.
+    Preserve the response, including additional fields, for API compatibility.
+    """
+    if engine not in get_args(AutomationEngine):
+        raise ValueError("engine must be one of: AutoCAD, Revit, Inventor, Fusion, 3dsMax")
+
+    response = requests.get(
+        f"{DA_BASE_URL}/health/{engine}/stats",
+        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+        timeout=timeout,
+    )
+    response.raise_for_status()
+    return response.json()
+
 
 def get_nickname(token: str) -> str:
     """
