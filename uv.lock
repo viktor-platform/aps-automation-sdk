@@ -22,7 +22,7 @@ wheels = [
 
 [[package]]
 name = "aps-automation-sdk"
-version = "0.2.0rc1"
+version = "0.2.0rc2"
 source = { editable = "." }
 dependencies = [
     { name = "pydantic" },

@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.2.0rc2 — 2026-10-27
+
+This candidate includes the changes from 0.2.0rc1 and adds engine queue statistics.
+Existing callers require no changes for this addition.
+
+```bash
+python -m pip install --upgrade "aps-automation-sdk==0.2.0rc2"
+```
+
+### Added
+
+- Add `get_engine_queue_stats(engine, token, *, timeout=30)` for the APS Beta endpoint `GET /health/{engine}/stats` in US-East.
+- Export `AutomationEngine`, a `Literal` of the five supported engine names. Reject invalid names before the request.
+- Export `EngineQueueStats`, a `TypedDict` with `p50QueueTimeMs` and `p95QueueTimeMs` in milliseconds. Preserve additional response fields and the `-1.0` value for no recent data.
+- Add unit tests to the existing CI job for all five engines, no recent data, invalid names, HTTP failures, connection failures, and timeout options.
+
 ## 0.2.0rc1 — 2026-10-27
 
 This is a release candidate for testing before the stable 0.2.0 release.

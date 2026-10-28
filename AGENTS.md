@@ -31,6 +31,10 @@ Purpose: Low-level wrappers around APS REST endpoints.
 Functional groups and key methods:
 - Base URL:
   - `DA_BASE_URL` uses the US-East endpoint.
+- Engine queue statistics:
+  - `get_engine_queue_stats(engine, token, *, timeout=30)`
+  - `AutomationEngine` limits engine names with `Literal`. Invalid names raise `ValueError` before the request.
+  - `EngineQueueStats` describes `p50QueueTimeMs` and `p95QueueTimeMs`. Values are milliseconds; `-1.0` means no recent data. Additional response fields are preserved.
 - OSS signed upload/download:
   - `get_signed_s3_upload(...)`
   - `put_to_signed_url(signed_url, file_path)`
@@ -242,6 +246,7 @@ CLI and skill available:
 - [DA Activity DELETE](https://aps.autodesk.com/en/docs/design-automation/v3/reference/http/activities-id-DELETE/)
 - [DA WorkItems POST](https://aps.autodesk.com/en/docs/design-automation/v3/reference/http/workitems-POST/)
 - [DA WorkItems GET](https://aps.autodesk.com/en/docs/design-automation/v3/reference/http/workitems-id-GET/)
+- [DA Engine Queue Stats GET](https://aps.autodesk.com/en/docs/design-automation/v3/reference/http/health-engine-stats-GET/)
 - [ACC Version -> Item GET](https://aps.autodesk.com/en/docs/data/v1/reference/http/projects-project_id-versions-version_id-item-GET/)
 - [ACC Item -> Parent GET](https://aps.autodesk.com/en/docs/data/v1/reference/http/projects-project_id-items-item_id-parent-GET/)
 - [ACC Item Tip GET](https://aps.autodesk.com/en/docs/data/v1/reference/http/projects-project_id-items-item_id-tip-GET/)
@@ -255,6 +260,7 @@ CLI and skill available:
 ### `core.py`
 | Method | APS reference | Note |
 |---|---|---|
+| `get_engine_queue_stats` | [DA Engine Queue Stats GET](https://aps.autodesk.com/en/docs/design-automation/v3/reference/http/health-engine-stats-GET/) | Reads queue wait percentiles for one shared engine queue. Preserves milliseconds and the no-data value `-1.0`. |
 | `get_nickname` | [DA Forge App Me GET](https://aps.autodesk.com/en/docs/design-automation/v3/reference/http/forgeapps-me-GET/) | Reads current DA app nickname. |
 | `get_signed_s3_upload` | [OSS Signed S3 Upload GET](https://aps.autodesk.com/en/docs/data/v2/reference/http/buckets-bucketKey-objects-objectName-signeds3upload-GET/) | Gets upload URL + `uploadKey`. |
 | `put_to_signed_url` | [OSS Signed S3 Upload GET](https://aps.autodesk.com/en/docs/data/v2/reference/http/buckets-bucketKey-objects-objectName-signeds3upload-GET/) | Uploads bytes to signed URL returned by APS. |

@@ -52,6 +52,31 @@ CLIENT_SECRET=your_client_secret_here
 
 You can use `.env.sample` as a reference. To get your credentials, create an Autodesk Platform Services application at: https://get-started.aps.autodesk.com/
 
+## Read engine queue statistics
+
+```python
+from aps_automation_sdk import get_engine_queue_stats
+
+stats = get_engine_queue_stats(engine="Revit", token=token)
+print(stats["p50QueueTimeMs"])
+print(stats["p95QueueTimeMs"])
+```
+
+The helper calls `GET /health/{engine}/stats` in US-East. It accepts `AutoCAD`,
+`Revit`, `Inventor`, `Fusion`, and `3dsMax`. Use the engine name without a version.
+`AutomationEngine` is a public `Literal` alias. An invalid name raises `ValueError`
+before the HTTP request.
+
+The return type is `EngineQueueStats`, a `TypedDict` with the APS field names.
+The response preserves additional fields. `p50QueueTimeMs` and `p95QueueTimeMs`
+describe queue wait times over the last five minutes, in milliseconds. A value
+of `-1.0` means no recent data. These values are not a wait estimate for your job.
+
+The request has a 30-second timeout. Set `timeout=` to change it. HTTP and
+connection errors pass to the caller. APS marks this endpoint as Beta.
+See the [APS queue statistics reference](https://aps.autodesk.com/en/docs/design-automation/v3/reference/http/health-engine-stats-GET/)
+and the [queue visibility guide](https://aps.autodesk.com/blog/introducing-queue-visibility-automation-api-3).
+
 ## Poll workitem progress
 
 Use `on_event` to receive a `WorkItemPollEvent` after each status request.
